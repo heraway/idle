@@ -1,0 +1,349 @@
+// Idle — data model
+// Run `npx prisma migrate dev` after filling in DATABASE_URL in .env
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────────────────────────
+
+enum Role {
+  USER
+  ADMIN
+  SUPERADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum VerificationStatus {
+  NONE
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum JobStatus {
+  OPEN         // posted, taking bids
+  ASSIGNED     // a bid accepted, worker assigned, not yet started
+  IN_PROGRESS  // worker has ticked at least one checklist item
+  SUBMITTED    // worker marked the job done, awaiting hirer confirmation
+  COMPLETED    // hirer confirmed — escrow releases
+  CANCELLED    // cancelled by hirer or admin before completion
+  DISPUTED     // either party raised a dispute — escrow frozen
+}
+
+enum BidStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum EscrowStatus {
+  PENDING       // created, not yet funded
+  FUNDED        // hirer paid in, held by processor
+  RELEASED      // paid out to the worker
+  REFUNDED      // returned to the hirer
+  DISPUTED_HOLD // frozen pending admin review
+}
+
+enum ReportTargetType {
+  USER
+  JOB
+  MESSAGE
+}
+
+enum ReportStatus {
+  OPEN
+  REVIEWING
+  RESOLVED
+  DISMISSED
+}
+
+enum AdminActionType {
+  SUSPEND_USER
+  BAN_USER
+  REINSTATE_USER
+  CANCEL_JOB
+  FORCE_REFUND
+  FORCE_RELEASE
+  RESOLVE_REPORT
+  DISMISS_REPORT
+  REMOVE_REVIEW
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// CORE MODELS
+// ─────────────────────────────────────────────────────────────────────────
+
+model User {
+  id            String        @id @default(uuid())
+  email         String        @unique
+  phone         String?       @unique
+  passwordHash  String
+  firstName     String
+  lastName      String
+  bio           String?
+  avatarUrl     String?
+  role          Role          @default(USER)
+  accountStatus AccountStatus @default(ACTIVE)
+
+  // rough location for "jobs near me" on the worker's own profile / default search origin
+  latitude  Float?
+  longitude Float?
+  city      String?
+  country   String?
+
+  // trust signals
+  avgRating     Float @default(0)
+  ratingCount   Int   @default(0)
+  likesReceived Int   @default(0)
+
+  // identity verification — status lives directly on User because it's a
+  // reusable, one-time-per-account fact, not a per-job record. We NEVER
+  // store the ID document itself, only the result + an opaque provider ref.
+  verificationStatus VerificationStatus @default(NONE)
+  verificationRef    String?
+  verifiedAt         DateTime?
+
+  // legal consent — required before posting/bidding (see /LEGAL)
+  acceptedTermsAt      DateTime?
+  acceptedTermsVersion String?
+  acceptedPrivacyAt    DateTime?
+  acceptedWaiverAt     DateTime?
+
+  // how many hours/day this person is generally willing to work (as a worker)
+  hoursPerDayAvailable Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobsPosted        Job[]         @relation("HirerJobs")
+  jobsWorking       Job[]         @relation("WorkerJobs")
+  bids              Bid[]
+  messagesSent      Message[]
+  ratingsGiven      Rating[]      @relation("RatingsGiven")
+  ratingsReceived   Rating[]      @relation("RatingsReceived")
+  reportsFiled      Report[]      @relation("ReportsFiled")
+  reportsAgainst    Report[]      @relation("ReportsAgainst")
+  adminActionsTaken AdminAction[] @relation("AdminActionsTaken")
+  adminActionsOn    AdminAction[] @relation("AdminActionsOn")
+  blockedUsers      Block[]       @relation("Blocker")
+  blockedByUsers    Block[]       @relation("Blocked")
+
+  @@index([accountStatus])
+}
+
+model Job {
+  id       String  @id @default(uuid())
+  hirerId  String
+  hirer    User    @relation("HirerJobs", fields: [hirerId], references: [id])
+  workerId String?
+  worker   User?   @relation("WorkerJobs", fields: [workerId], references: [id])
+
+  title       String
+  description String
+  category    String
+
+  requiresLicense         String? // informational, e.g. "Driver's license" — poster confirms manually
+  requiresIdVerification  Boolean @default(false)
+
+  latitude  Float
+  longitude Float
+  address   String?
+  city      String?
+  country   String?
+
+  payType          String // "fixed" | "hourly"
+  budgetMin        Float?
+  budgetMax        Float?
+  currency         String @default("USD")
+  durationEstimate String? // free text, e.g. "2-3 hours", "1 day"
+  workersNeeded    Int    @default(1)
+  hoursPerDayNeeded Int?  // how many hrs/day the hirer is willing to have someone work
+
+  status JobStatus @default(OPEN)
+
+  beforePhotoUrl String?
+  afterPhotoUrl  String?
+
+  assignedAt  DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  checklistItems ChecklistItem[]
+  bids           Bid[]
+  messages       Message[]
+  ratings        Rating[]
+  reports        Report[]
+  escrow         Escrow?
+  assignment     JobAssignment?
+
+  @@index([status])
+  @@index([category])
+  @@index([latitude, longitude])
+}
+
+model Bid {
+  id       String @id @default(uuid())
+  jobId    String
+  job      Job    @relation(fields: [jobId], references: [id])
+  bidderId String
+  bidder   User   @relation(fields: [bidderId], references: [id])
+
+  amount  Float
+  message String?
+  status  BidStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignment JobAssignment?
+
+  @@unique([jobId, bidderId])
+  @@index([jobId, status])
+}
+
+// Audit link recording which accepted bid produced a job's assignment.
+model JobAssignment {
+  id        String   @id @default(uuid())
+  jobId     String   @unique
+  job       Job      @relation(fields: [jobId], references: [id])
+  bidId     String   @unique
+  bid       Bid      @relation(fields: [bidId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model ChecklistItem {
+  id     String @id @default(uuid())
+  jobId  String
+  job    Job    @relation(fields: [jobId], references: [id])
+
+  label         String
+  order         Int      @default(0)
+  isDone        Boolean  @default(false)
+  doneAt        DateTime?
+  proofPhotoUrl String?
+
+  createdAt DateTime @default(now())
+
+  @@index([jobId])
+}
+
+model Message {
+  id       String @id @default(uuid())
+  jobId    String
+  job      Job    @relation(fields: [jobId], references: [id])
+  senderId String
+  sender   User   @relation(fields: [senderId], references: [id])
+
+  body        String
+  imageUrl    String?
+  systemEvent String? // e.g. "BID_ACCEPTED", "CHECKLIST_ITEM_DONE" — renders differently in-app
+
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+
+  @@index([jobId, createdAt])
+}
+
+model Rating {
+  id     String @id @default(uuid())
+  jobId  String
+  job    Job    @relation(fields: [jobId], references: [id])
+
+  fromUserId String
+  fromUser   User   @relation("RatingsGiven", fields: [fromUserId], references: [id])
+  toUserId   String
+  toUser     User   @relation("RatingsReceived", fields: [toUserId], references: [id])
+
+  stars   Int // 1-5
+  liked   Boolean @default(false)
+  comment String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([jobId, fromUserId, toUserId])
+  @@index([toUserId])
+}
+
+model Escrow {
+  id       String @id @default(uuid())
+  jobId    String @unique
+  job      Job    @relation(fields: [jobId], references: [id])
+
+  amount   Float
+  currency String       @default("USD")
+  status   EscrowStatus @default(PENDING)
+
+  providerRef   String?
+  providerName  String  @default("mock") // "mock" | "stripe_connect"
+  disputeReason String?
+
+  fundedAt   DateTime?
+  releasedAt DateTime?
+  refundedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Report {
+  id         String           @id @default(uuid())
+  reporterId String
+  reporter   User             @relation("ReportsFiled", fields: [reporterId], references: [id])
+
+  targetType   ReportTargetType
+  targetUserId String?
+  targetUser   User?            @relation("ReportsAgainst", fields: [targetUserId], references: [id])
+  jobId        String?
+  job          Job?             @relation(fields: [jobId], references: [id])
+
+  reason  String
+  details String?
+  status  ReportStatus @default(OPEN)
+
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  @@index([status])
+}
+
+model Block {
+  id        String   @id @default(uuid())
+  blockerId String
+  blocker   User     @relation("Blocker", fields: [blockerId], references: [id])
+  blockedId String
+  blocked   User     @relation("Blocked", fields: [blockedId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+}
+
+model AdminAction {
+  id           String          @id @default(uuid())
+  adminId      String
+  admin        User            @relation("AdminActionsTaken", fields: [adminId], references: [id])
+  targetUserId String?
+  targetUser   User?           @relation("AdminActionsOn", fields: [targetUserId], references: [id])
+  targetJobId  String?
+
+  type   AdminActionType
+  reason String
+
+  createdAt DateTime @default(now())
+
+  @@index([targetUserId])
+}
