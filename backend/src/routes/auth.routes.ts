@@ -43,6 +43,7 @@ authRouter.post(
         acceptedTermsAt: new Date(),
         acceptedTermsVersion: CURRENT_TERMS_VERSION,
         acceptedPrivacyAt: new Date(),
+        acceptedWaiverAt: new Date(),
       },
     });
 

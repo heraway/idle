@@ -134,11 +134,14 @@ jobRouter.get(
     });
 
     if (q.lat !== undefined && q.lng !== undefined) {
-      jobs = jobs
-        .map((j) => ({ ...j, distanceKm: distanceKm(q.lat!, q.lng!, j.latitude, j.longitude) }))
-        .filter((j) => j.distanceKm <= q.radiusKm)
-        .sort((a, b) => a.distanceKm - b.distanceKm)
-        .slice((q.page - 1) * q.pageSize, q.page * q.pageSize);
+      const withDistance = jobs.map((j: (typeof jobs)[number]) => ({
+        ...j,
+        distanceKm: distanceKm(q.lat!, q.lng!, j.latitude, j.longitude),
+      }));
+      jobs = withDistance
+        .filter((j: (typeof withDistance)[number]) => j.distanceKm <= q.radiusKm)
+        .sort((a: (typeof withDistance)[number], b: (typeof withDistance)[number]) => a.distanceKm - b.distanceKm)
+        .slice((q.page - 1) * q.pageSize, q.page * q.pageSize) as typeof jobs;
     }
 
     res.json({ jobs, page: q.page, pageSize: q.pageSize });

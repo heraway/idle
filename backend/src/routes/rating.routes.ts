@@ -42,8 +42,8 @@ ratingRouter.post(
 
     // Recompute the target's aggregate trust stats.
     const allRatings = await prisma.rating.findMany({ where: { toUserId: data.toUserId } });
-    const avg = allRatings.reduce((sum, r) => sum + r.stars, 0) / allRatings.length;
-    const likeCount = allRatings.filter((r) => r.liked).length;
+    const avg = allRatings.reduce((sum: number, r: (typeof allRatings)[number]) => sum + r.stars, 0) / allRatings.length;
+    const likeCount = allRatings.filter((r: (typeof allRatings)[number]) => r.liked).length;
 
     await prisma.user.update({
       where: { id: data.toUserId },

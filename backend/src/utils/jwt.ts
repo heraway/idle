@@ -9,7 +9,10 @@ export interface JwtPayload {
 }
 
 export function signToken(payload: JwtPayload): string {
-  return jwt.sign(payload, SECRET, { expiresIn: EXPIRES_IN });
+  // Cast avoids a TS overload mismatch between @types/jsonwebtoken's strict
+  // `expiresIn` type (expects a numeric literal type) and a plain string
+  // sourced from an env var — functionally correct at runtime either way.
+  return jwt.sign(payload, SECRET, { expiresIn: EXPIRES_IN } as jwt.SignOptions);
 }
 
 export function verifyToken(token: string): JwtPayload {

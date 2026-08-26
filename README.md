@@ -52,20 +52,31 @@ real Stripe Connect account and a real ID-verification provider, both pay-per-us
 
 ```
 idle-app/
-├── LEGAL/                     ToS, Privacy Policy, Waiver, ID-consent, Guidelines
+├── LEGAL/                       ToS, Privacy Policy, Waiver, ID-consent, Guidelines
 ├── backend/
-│   ├── prisma/schema.prisma   full data model (12 models, see below)
+│   ├── prisma/schema.prisma     full data model (11 models — see below)
 │   └── src/
-│       ├── routes/            one file per resource (auth, jobs, bids, messages, ...)
-│       ├── middleware/         auth guard, admin guard, error handler
-│       ├── services/           escrow, ID verification, storage, notifications
-│       └── utils/               jwt, password hashing, validation
+│       ├── index.ts             Express app entry point, mounts every router
+│       ├── routes/              auth, users, jobs, bids, checklist, messages,
+│       │                        ratings, escrow, reports, verification, admin
+│       ├── middleware/          auth guard, admin/superadmin guard, rate limits, errors
+│       ├── services/            escrow (mock), ID verification (mock), notifications, uploads
+│       └── utils/                jwt, ApiError, asyncHandler
 └── mobile/
+    ├── App.tsx                  wires ThemeProvider + AuthProvider + RootNavigator
     └── src/
-        ├── theme/              light/dark tokens + ThemeContext
-        ├── navigation/         RootNavigator (auth stack + tabs)
-        ├── screens/            Auth, Home/Search, Jobs, Messaging, Profile, Escrow, Admin
-        └── components/         JobCard, RatingStars, ThemeToggle
+        ├── theme/               light/dark design tokens
+        ├── context/             ThemeContext, AuthContext
+        ├── api/                 typed fetch client (JSON + multipart upload)
+        ├── navigation/          RootNavigator (auth stack ↔ main app stack/tabs)
+        ├── components/          Button, Card, Badge, Input, EmptyState
+        └── screens/
+            ├── Auth/            Consent, Login, Register
+            ├── Jobs/            Feed (search+filters), Detail, PostJob, ReportUser
+            ├── Chat/            per-job messaging + checklist proof photos
+            ├── Profile/         profile, theme switcher, legal doc viewer
+            ├── Verification/    ID verification consent + status
+            └── Admin/           overview, users, jobs, reports tabs
 ```
 
 ## 4. Data model highlights (`backend/prisma/schema.prisma`)
@@ -142,16 +153,32 @@ have one:
 docker compose up -d
 ```
 
-## 7. Roadmap / not-yet-built (clearly marked as `// TODO` in code)
+## 7. API surface (backend/src/index.ts)
 
-- Real Stripe Connect onboarding flow for workers (payout accounts)
-- Push notifications (Expo Notifications is stubbed in `notification.service.ts`)
-- Live map view for job locations (currently list + text address)
-- In-app live location sharing during an active job (SOS button is present, the
-  live-tracking map is not)
+| Prefix | Covers |
+|---|---|
+| `/auth` | register (mandatory ToS consent), login |
+| `/users` | current-user profile, public trust profile |
+| `/jobs` | create, `/search` (category/location-radius/pay/duration/workers filters), get one, before/after photos, cancel |
+| `/bids` | place, withdraw, accept (assigns worker + opens escrow gate) |
+| `/checklist` | add item, tick off with optional photo, submit job, hirer confirm-complete |
+| `/messages` | per-job chat, text or photo |
+| `/ratings` | star + like rating, only after `COMPLETED` |
+| `/escrow` | fund, release, refund, freeze-on-dispute (mock provider, Stripe-Connect-shaped) |
+| `/reports` | file a report (auto-freezes escrow + disputes the job), admin resolve queue |
+| `/verification` | start ID-verification session (consent-gated), status, dev-only mock-complete |
+| `/admin` | overview stats, user suspend/ban/reinstate/role, job force-cancel (auto-refunds), audit log |
+
+## 8. Roadmap / not-yet-built (clearly marked as `// TODO` in code)
+
+- Real Stripe Connect onboarding flow for workers (payout accounts) — see `escrow.service.ts`
+- Real ID-verification provider (Stripe Identity / Persona) — see `idVerification.service.ts`
+- Push notifications via Expo (`notification.service.ts` logs to console today)
+- Real-time chat via the included `socket.io` dependency (currently polls every 4s)
+- Live map view for job locations (currently list + distance badge)
 - Automated content moderation (profanity/image scanning) ahead of the human queue
 - Multi-language support
 
-## 8. License
+## 9. License
 
 MIT — see `LICENSE`. Use it, fork it, ship it.

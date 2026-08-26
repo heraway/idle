@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "Idle",
+    "slug": "idle",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
+    "splash": { "backgroundColor": "#0F172A" },
+    "assetBundlePatterns": ["**/*"],
+    "ios": { "supportsTablet": true, "bundleIdentifier": "com.idle.app" },
+    "android": { "package": "com.idle.app" },
+    "extra": { "apiUrl": "http://localhost:4000" }
+  }
+}

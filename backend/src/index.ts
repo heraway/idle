@@ -13,6 +13,10 @@ import { bidRouter } from "./routes/bid.routes";
 import { checklistRouter } from "./routes/checklist.routes";
 import { messageRouter } from "./routes/message.routes";
 import { ratingRouter } from "./routes/rating.routes";
+import { escrowRouter } from "./routes/escrow.routes";
+import { reportRouter } from "./routes/report.routes";
+import { verificationRouter } from "./routes/verification.routes";
+import { adminRouter } from "./routes/admin.routes";
 
 const app = express();
 
@@ -34,9 +38,10 @@ app.use("/bids", bidRouter);
 app.use("/checklist", checklistRouter);
 app.use("/messages", messageRouter);
 app.use("/ratings", ratingRouter);
-
-// NOTE: escrow, reports, id-verification, and admin routers are being added
-// next — they'll mount here as /escrow, /reports, /verification, /admin.
+app.use("/escrow", escrowRouter);
+app.use("/reports", reportRouter);
+app.use("/verification", verificationRouter);
+app.use("/admin", adminRouter);
 
 app.use(errorHandler);
 
