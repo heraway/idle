@@ -38,8 +38,8 @@ export default function RegisterScreen({ route }: any) {
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing.xxl }}>
         <ScreenTitle>Create your account</ScreenTitle>
 
-        <Input label="First name" value={firstName} onChangeText={setFirstName} placeholder="Mutale" />
-        <Input label="Last name" value={lastName} onChangeText={setLastName} placeholder="Banda" />
+        <Input label="First name" value={firstName} onChangeText={setFirstName} placeholder="john" />
+        <Input label="Last name" value={lastName} onChangeText={setLastName} placeholder="Baggins" />
         <Input label="Email" value={email} onChangeText={setEmail} placeholder="you@example.com" keyboardType="email-address" />
         <Input label="Password" value={password} onChangeText={setPassword} placeholder="At least 8 characters" secureTextEntry />
 
