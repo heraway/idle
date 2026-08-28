@@ -105,29 +105,48 @@ export function Input({
   multiline?: boolean;
 }) {
   const { theme } = useTheme();
+  // Only relevant for password-style fields — lets the user confirm what
+  // they actually typed/pasted before submitting.
+  const [revealed, setRevealed] = React.useState(false);
+  const isPasswordField = !!secureTextEntry;
+
   return (
     <View style={{ marginBottom: spacing.md }}>
       <Text style={[typography.bodyBold, { color: theme.textPrimary, marginBottom: spacing.xs }]}>{label}</Text>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={theme.textSecondary}
-        secureTextEntry={secureTextEntry}
-        keyboardType={keyboardType}
-        multiline={multiline}
-        autoCapitalize="none"
-        style={[
-          styles.input,
-          {
-            backgroundColor: theme.surfaceAlt,
-            borderColor: theme.border,
-            color: theme.textPrimary,
-            minHeight: multiline ? 90 : undefined,
-            textAlignVertical: multiline ? "top" : "center",
-          },
-        ]}
-      />
+      <View style={{ position: "relative", justifyContent: "center" }}>
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={theme.textSecondary}
+          secureTextEntry={isPasswordField && !revealed}
+          keyboardType={keyboardType}
+          multiline={multiline}
+          autoCapitalize="none"
+          style={[
+            styles.input,
+            {
+              backgroundColor: theme.surfaceAlt,
+              borderColor: theme.border,
+              color: theme.textPrimary,
+              minHeight: multiline ? 90 : undefined,
+              textAlignVertical: multiline ? "top" : "center",
+              paddingRight: isPasswordField ? 64 : undefined,
+            },
+          ]}
+        />
+        {isPasswordField ? (
+          <TouchableOpacity
+            onPress={() => setRevealed((r) => !r)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={{ position: "absolute", right: spacing.md }}
+          >
+            <Text style={{ color: theme.primary, fontWeight: "600", fontSize: 13 }}>
+              {revealed ? "Hide" : "Show"}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
     </View>
   );
 }
