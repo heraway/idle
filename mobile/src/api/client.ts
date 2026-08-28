@@ -1,11 +1,31 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 
-// Points at your local backend by default. For a real device (not simulator),
-// swap this to your machine's LAN IP, e.g. "http://192.168.1.42:4000",
-// or your deployed backend URL once you host it (Render/Railway/Fly.io all
-// have free tiers).
-const API_URL = (Constants.expoConfig?.extra?.apiUrl as string) || "http://localhost:4000";
+// Points at your local backend. On a physical device, "localhost" means the
+// PHONE, not your PC, so we auto-detect your dev machine's LAN IP from the
+// same host Metro is already using to talk to the device. Override by
+// setting a real value (not "http://localhost:4000") in app.json's
+// extra.apiUrl — e.g. once you deploy the backend somewhere (Render/Railway/
+// Fly.io all have free tiers), or just want to pin a specific IP.
+function resolveApiUrl(): string {
+  const configured = Constants.expoConfig?.extra?.apiUrl as string | undefined;
+  if (configured && configured !== "http://localhost:4000") return configured;
+
+  const hostUri =
+    Constants.expoConfig?.hostUri ||
+    (Constants as any).manifest2?.extra?.expoGo?.debuggerHost ||
+    (Constants as any).manifest?.debuggerHost;
+
+  if (hostUri) {
+    const host = String(hostUri).split(":")[0];
+    if (host && host !== "localhost" && host !== "127.0.0.1") {
+      return `http://${host}:4000`;
+    }
+  }
+  return "http://localhost:4000";
+}
+
+const API_URL = resolveApiUrl();
 
 const TOKEN_KEY = "idle:authToken";
 
