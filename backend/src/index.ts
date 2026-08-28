@@ -25,6 +25,13 @@ app.use(cors());
 app.use(express.json({ limit: "5mb" }));
 app.use(generalLimiter);
 
+// Invisible portfolio signature — not shown in any UI, just an attribution
+// marker on API responses so this build can be identified as the original.
+app.use((_req, res, next) => {
+  res.setHeader("X-Built-By", "heraway");
+  next();
+});
+
 // Serve uploaded photos (before/after, checklist proof, chat images).
 // Swap for S3/Cloudinary in production — see backend/.env.example.
 app.use("/uploads", express.static(path.join(process.cwd(), process.env.UPLOAD_DIR || "./uploads")));

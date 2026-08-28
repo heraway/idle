@@ -38,8 +38,13 @@ export default function RegisterScreen({ route }: any) {
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing.xxl }}>
         <ScreenTitle>Create your account</ScreenTitle>
 
-        <Input label="First name" value={firstName} onChangeText={setFirstName} placeholder="john" />
-        <Input label="Last name" value={lastName} onChangeText={setLastName} placeholder="Baggins" />
+        <Input label="First name" value={firstName} onChangeText={setFirstName} placeholder="Enter your first name" />
+        <Input label="Last name" value={lastName} onChangeText={setLastName} placeholder="Enter your last name" />
+        <Text style={{ color: theme.textMuted, fontSize: 12, marginTop: -spacing.sm, marginBottom: spacing.md }}>
+          Please use your real name. Idle relies on verified identities to keep hirers and workers accountable to
+          each other.
+        </Text>
+
         <Input label="Email" value={email} onChangeText={setEmail} placeholder="you@example.com" keyboardType="email-address" />
         <Input label="Password" value={password} onChangeText={setPassword} placeholder="At least 8 characters" secureTextEntry />
 
