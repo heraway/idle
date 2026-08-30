@@ -5,8 +5,7 @@ import { api } from "../../api/client";
 import { Job } from "../../types";
 import { Card, Badge, Button, EmptyState } from "../../components/UI";
 import { spacing, typography, radius } from "../../theme/theme";
-
-const CATEGORIES = ["All", "Lawn Care", "Hair Braiding", "Babysitting", "Cleaning", "Moving Help", "Driving", "Handyman", "Other"];
+import { FEED_CATEGORIES as CATEGORIES } from "../../constants/categories";
 
 interface Filters {
   category?: string;

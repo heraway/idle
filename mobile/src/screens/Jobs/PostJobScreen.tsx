@@ -5,8 +5,7 @@ import { useTheme } from "../../context/ThemeContext";
 import { api } from "../../api/client";
 import { Button, Input, ScreenTitle } from "../../components/UI";
 import { spacing, typography, radius } from "../../theme/theme";
-
-const CATEGORIES = ["Lawn Care", "Hair Braiding", "Babysitting", "Cleaning", "Moving Help", "Driving", "Handyman", "Other"];
+import { JOB_CATEGORIES as CATEGORIES } from "../../constants/categories";
 
 export default function PostJobScreen({ navigation }: any) {
   const { theme } = useTheme();
