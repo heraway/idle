@@ -126,6 +126,11 @@ model User {
   // how many hours/day this person is generally willing to work (as a worker)
   hoursPerDayAvailable Int?
 
+  // Forgot-password flow — a short-lived, single-use, hashed token (never
+  // store the raw token; see auth.routes.ts). Nulled out after use or expiry.
+  passwordResetTokenHash String?
+  passwordResetExpiresAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

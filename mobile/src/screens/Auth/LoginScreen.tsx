@@ -40,6 +40,10 @@ export default function LoginScreen({ navigation }: any) {
 
         <Button title="Log In" onPress={handleLogin} loading={loading} disabled={!email || !password} />
 
+        <TouchableOpacity onPress={() => navigation.navigate("ForgotPassword")} style={{ marginTop: spacing.md, alignItems: "center" }}>
+          <Text style={{ color: theme.primary, fontWeight: "600" }}>Forgot password?</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity onPress={() => navigation.navigate("Consent")} style={{ marginTop: spacing.lg, alignItems: "center" }}>
           <Text style={[typography.body, { color: theme.textSecondary }]}>
             New to Idle? <Text style={{ color: theme.primary, fontWeight: "600" }}>Create an account</Text>

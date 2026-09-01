@@ -65,6 +65,11 @@ export default function ProfileScreen({ navigation }: any) {
       </Card>
 
       <Card>
+        <Text style={[typography.h3, { color: theme.textPrimary, marginBottom: spacing.sm }]}>Account & Security</Text>
+        <Button title="Change Password" variant="secondary" onPress={() => navigation.navigate("ChangePassword")} />
+      </Card>
+
+      <Card>
         <Text style={[typography.h3, { color: theme.textPrimary, marginBottom: spacing.sm }]}>Legal</Text>
         <Button title="Terms of Service" variant="secondary" onPress={() => navigation.navigate("LegalDoc", { doc: "terms" })} style={{ marginBottom: spacing.sm }} />
         <Button title="Privacy Policy" variant="secondary" onPress={() => navigation.navigate("LegalDoc", { doc: "privacy" })} style={{ marginBottom: spacing.sm }} />
