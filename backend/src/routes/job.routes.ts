@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../config/prisma";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, optionalAuth } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/ApiError";
 import { upload, publicUrlFor } from "../services/upload.service";
@@ -101,8 +101,37 @@ function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// ------------------------------------------------------------
+// LOCATION PRIVACY — a job's exact coordinates and street address are only
+// shown to the hirer, the assigned worker, and admins. Everyone else
+// (people browsing the feed, or who bid but weren't chosen) sees the
+// location rounded to ~1.1km precision and no street address — enough to
+// judge distance/neighborhood without pinpointing a home. Full precision
+// reappears automatically once a worker is assigned, since they need it to
+// actually show up. Note this only closes the "browsing/rejected bidder"
+// exposure — it can't retroactively hide an address from a worker who
+// physically visited; that's a real-world limit no API-side masking fixes,
+// which is why report.routes.ts + admin escalation exist as the backstop
+// for a completed job that ends up unsafe.
+// ------------------------------------------------------------
+function maskJobLocation<T extends { hirerId: string; workerId?: string | null; latitude: number; longitude: number; address?: string | null }>(
+  job: T,
+  viewer?: { userId: string; role: string }
+): T {
+  const isParticipant = !!viewer && (viewer.userId === job.hirerId || viewer.userId === job.workerId);
+  const isAdmin = !!viewer && (viewer.role === "ADMIN" || viewer.role === "SUPERADMIN");
+  if (isParticipant || isAdmin) return job;
+
+  return {
+    ...job,
+    latitude: Math.round(job.latitude * 100) / 100,
+    longitude: Math.round(job.longitude * 100) / 100,
+    address: null,
+  };
+}
 jobRouter.get(
   "/search",
+  optionalAuth,
   asyncHandler(async (req, res) => {
     const q = searchSchema.parse(req.query);
 
@@ -144,7 +173,9 @@ jobRouter.get(
         .slice((q.page - 1) * q.pageSize, q.page * q.pageSize) as typeof jobs;
     }
 
-    res.json({ jobs, page: q.page, pageSize: q.pageSize });
+    const maskedJobs = jobs.map((j: (typeof jobs)[number]) => maskJobLocation(j, req.auth ? { userId: req.auth.userId, role: req.auth.role } : undefined));
+
+    res.json({ jobs: maskedJobs, page: q.page, pageSize: q.pageSize });
   })
 );
 
@@ -153,6 +184,7 @@ jobRouter.get(
 // ------------------------------------------------------------
 jobRouter.get(
   "/:id",
+  optionalAuth,
   asyncHandler(async (req, res) => {
     const job = await prisma.job.findUnique({
       where: { id: req.params.id },
@@ -165,7 +197,9 @@ jobRouter.get(
       },
     });
     if (!job) throw new ApiError(404, "Job not found");
-    res.json(job);
+
+    const masked = maskJobLocation(job, req.auth ? { userId: req.auth.userId, role: req.auth.role } : undefined);
+    res.json(masked);
   })
 );
 

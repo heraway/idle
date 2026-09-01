@@ -48,3 +48,21 @@ export function requireSuperAdmin(req: Request, res: Response, next: NextFunctio
   }
   next();
 }
+
+// Like requireAuth, but never blocks the request — used on public browsing
+// routes (job search/detail) where we still want to know *who's* asking, so
+// we can show full details to participants/admins and a privacy-safe view
+// to everyone else. Silently ignores a missing or invalid token.
+export async function optionalAuth(req: Request, _res: Response, next: NextFunction) {
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith("Bearer ")) return next();
+  try {
+    const token = header.split(" ")[1];
+    const payload = verifyToken(token);
+    const user = await prisma.user.findUnique({ where: { id: payload.userId } });
+    if (user && user.accountStatus === "ACTIVE") req.auth = payload;
+  } catch {
+    // Invalid/expired token on a public route — just proceed unauthenticated.
+  }
+  next();
+}
