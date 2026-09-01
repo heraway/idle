@@ -37,3 +37,9 @@ yarn-error.log*
 # ide
 .vscode/
 .idea/
+
+login.json
+reset.json
+changepw.json
+forgot.json
+body.json
