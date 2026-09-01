@@ -243,6 +243,59 @@ jobRouter.post(
 );
 
 // ------------------------------------------------------------
+// PREVIEW PHOTOS — optional photos of the work site, attached by the hirer
+// at posting time so bidders know what they're actually walking into
+// before they commit to a price. Up to 5 total; upload can happen right
+// after job creation, or added later while the job is still OPEN.
+// ------------------------------------------------------------
+const MAX_PREVIEW_PHOTOS = 5;
+
+jobRouter.post(
+  "/:id/preview-photos",
+  requireAuth,
+  upload.array("photos", MAX_PREVIEW_PHOTOS),
+  asyncHandler(async (req, res) => {
+    const job = await prisma.job.findUnique({ where: { id: req.params.id } });
+    if (!job) throw new ApiError(404, "Job not found");
+    if (job.hirerId !== req.auth!.userId) throw new ApiError(403, "Only the hirer can add preview photos");
+    if (job.status !== "OPEN") throw new ApiError(400, "Preview photos can only be added while the job is open for bids");
+
+    const files = (req.files as Express.Multer.File[]) || [];
+    if (files.length === 0) throw new ApiError(400, "No photos uploaded");
+    if (job.previewPhotoUrls.length + files.length > MAX_PREVIEW_PHOTOS) {
+      throw new ApiError(400, `A job can have at most ${MAX_PREVIEW_PHOTOS} preview photos (${job.previewPhotoUrls.length} already added)`);
+    }
+
+    const newUrls = files.map((f) => publicUrlFor(f.filename));
+    const updated = await prisma.job.update({
+      where: { id: job.id },
+      data: { previewPhotoUrls: { push: newUrls } },
+    });
+
+    res.status(201).json(updated);
+  })
+);
+
+jobRouter.delete(
+  "/:id/preview-photos",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const job = await prisma.job.findUnique({ where: { id: req.params.id } });
+    if (!job) throw new ApiError(404, "Job not found");
+    if (job.hirerId !== req.auth!.userId) throw new ApiError(403, "Only the hirer can remove preview photos");
+
+    const urlToRemove = req.body?.url as string | undefined;
+    if (!urlToRemove) throw new ApiError(400, "url is required");
+
+    const updated = await prisma.job.update({
+      where: { id: job.id },
+      data: { previewPhotoUrls: job.previewPhotoUrls.filter((u: string) => u !== urlToRemove) },
+    });
+    res.json(updated);
+  })
+);
+
+// ------------------------------------------------------------
 // CANCEL (by hirer, before assignment) — admin cancel lives in admin.routes.ts
 // ------------------------------------------------------------
 jobRouter.post(

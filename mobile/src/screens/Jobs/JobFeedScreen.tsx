@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, FlatList, TouchableOpacity, TextInput, Modal, ScrollView } from "react-native";
+import { View, Text, FlatList, TouchableOpacity, TextInput, Modal, ScrollView, Image } from "react-native";
 import { useTheme } from "../../context/ThemeContext";
 import { api } from "../../api/client";
 import { Job } from "../../types";
@@ -165,6 +165,12 @@ function JobCard({ job, onPress }: { job: Job; onPress: () => void }) {
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
       <Card>
+        {job.previewPhotoUrls && job.previewPhotoUrls.length > 0 && (
+          <Image
+            source={{ uri: job.previewPhotoUrls[0] }}
+            style={{ width: "100%", height: 140, borderRadius: radius.md, marginBottom: spacing.sm }}
+          />
+        )}
         <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: spacing.xs }}>
           <Text style={[typography.h3, { color: theme.textPrimary, flex: 1 }]} numberOfLines={1}>
             {job.title}

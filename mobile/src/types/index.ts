@@ -39,6 +39,7 @@ export interface Job {
   status: "OPEN" | "ASSIGNED" | "IN_PROGRESS" | "SUBMITTED" | "COMPLETED" | "DISPUTED" | "CANCELLED";
   beforePhotoUrl?: string | null;
   afterPhotoUrl?: string | null;
+  previewPhotoUrls: string[];
   hirer?: Partial<User>;
   worker?: Partial<User>;
   bids?: Bid[];

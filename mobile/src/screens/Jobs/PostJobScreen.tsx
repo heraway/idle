@@ -1,11 +1,14 @@
 import React, { useState } from "react";
-import { View, Text, ScrollView, TouchableOpacity, Alert } from "react-native";
+import { View, Text, ScrollView, TouchableOpacity, Alert, Image } from "react-native";
 import * as Location from "expo-location";
+import * as ImagePicker from "expo-image-picker";
 import { useTheme } from "../../context/ThemeContext";
-import { api } from "../../api/client";
+import { api, apiUpload } from "../../api/client";
 import { Button, Input, ScreenTitle } from "../../components/UI";
 import { spacing, typography, radius } from "../../theme/theme";
 import { JOB_CATEGORIES as CATEGORIES } from "../../constants/categories";
+
+const MAX_PREVIEW_PHOTOS = 5;
 
 export default function PostJobScreen({ navigation }: any) {
   const { theme } = useTheme();
@@ -21,7 +24,29 @@ export default function PostJobScreen({ navigation }: any) {
   const [requiresLicense, setRequiresLicense] = useState("");
   const [requiresIdVerification, setRequiresIdVerification] = useState(false);
   const [checklist, setChecklist] = useState<string[]>([""]);
+  const [photos, setPhotos] = useState<string[]>([]); // local URIs, uploaded after job creation
   const [submitting, setSubmitting] = useState(false);
+
+  const pickPhotos = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("Permission needed", "Allow photo library access to add pictures of the work site.");
+      return;
+    }
+    const remaining = MAX_PREVIEW_PHOTOS - photos.length;
+    if (remaining <= 0) return;
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      selectionLimit: remaining,
+      quality: 0.7,
+    });
+    if (result.canceled) return;
+    setPhotos((prev) => [...prev, ...result.assets.map((a) => a.uri)].slice(0, MAX_PREVIEW_PHOTOS));
+  };
+
+  const removePhoto = (uri: string) => setPhotos((prev) => prev.filter((p) => p !== uri));
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -29,7 +54,7 @@ export default function PostJobScreen({ navigation }: any) {
       const loc = await Location.getCurrentPositionAsync({}).catch(() => null);
       const coords = loc?.coords || { latitude: 0, longitude: 0 };
 
-      await api("/jobs", {
+      const job = await api<{ id: string }>("/jobs", {
         method: "POST",
         body: {
           title,
@@ -48,6 +73,19 @@ export default function PostJobScreen({ navigation }: any) {
           checklist: checklist.filter((c) => c.trim().length > 0),
         },
       });
+
+      if (photos.length > 0) {
+        const form = new FormData();
+        photos.forEach((uri, i) => {
+          form.append("photos", { uri, name: `photo${i}.jpg`, type: "image/jpeg" } as any);
+        });
+        // Best-effort — the job itself is already posted at this point, so a
+        // photo-upload hiccup shouldn't block the whole flow or lose the job.
+        await apiUpload(`/jobs/${job.id}/preview-photos`, form).catch((e) =>
+          Alert.alert("Job posted, but photos failed to upload", e.message)
+        );
+      }
+
       Alert.alert("Job posted!", "Your job is now live and open for bids.");
       navigation.navigate("JobFeed");
     } catch (e: any) {
@@ -63,6 +101,51 @@ export default function PostJobScreen({ navigation }: any) {
 
       <Input label="Title" value={title} onChangeText={setTitle} placeholder="e.g. Mow my backyard lawn" />
       <Input label="Description" value={description} onChangeText={setDescription} placeholder="What needs doing, and any details a worker should know" multiline />
+
+      <Text style={[typography.bodyBold, { color: theme.textPrimary, marginBottom: spacing.xs }]}>Photos of the work site (optional)</Text>
+      <Text style={[typography.caption, { color: theme.textSecondary, marginBottom: spacing.sm }]}>
+        Show bidders what they're actually walking into — up to {MAX_PREVIEW_PHOTOS} photos.
+      </Text>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.lg }}>
+        {photos.map((uri) => (
+          <View key={uri} style={{ position: "relative" }}>
+            <Image source={{ uri }} style={{ width: 80, height: 80, borderRadius: radius.sm }} />
+            <TouchableOpacity
+              onPress={() => removePhoto(uri)}
+              style={{
+                position: "absolute",
+                top: -6,
+                right: -6,
+                backgroundColor: theme.danger,
+                borderRadius: radius.pill,
+                width: 22,
+                height: 22,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Text style={{ color: "#fff", fontWeight: "700", fontSize: 12 }}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        ))}
+        {photos.length < MAX_PREVIEW_PHOTOS && (
+          <TouchableOpacity
+            onPress={pickPhotos}
+            style={{
+              width: 80,
+              height: 80,
+              borderRadius: radius.sm,
+              borderWidth: 1.5,
+              borderColor: theme.border,
+              borderStyle: "dashed",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Text style={{ fontSize: 22, color: theme.textSecondary }}>+</Text>
+          </TouchableOpacity>
+        )}
+      </View>
 
       <Text style={[typography.bodyBold, { color: theme.textPrimary, marginBottom: spacing.xs }]}>Category</Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.md }}>

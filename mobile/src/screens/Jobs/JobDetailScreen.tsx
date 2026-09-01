@@ -147,6 +147,21 @@ export default function JobDetailScreen({ route, navigation }: any) {
 
       <Text style={[typography.body, { color: theme.textPrimary, marginBottom: spacing.lg }]}>{job.description}</Text>
 
+      {job.previewPhotoUrls && job.previewPhotoUrls.length > 0 && (
+        <Card>
+          <Text style={[typography.h3, { color: theme.textPrimary, marginBottom: spacing.sm }]}>Photos of the work site</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {job.previewPhotoUrls.map((url) => (
+              <Image
+                key={url}
+                source={{ uri: url }}
+                style={{ width: 160, height: 160, borderRadius: radius.md, marginRight: spacing.sm }}
+              />
+            ))}
+          </ScrollView>
+        </Card>
+      )}
+
       <Card>
         <Text style={[typography.h3, { color: theme.textPrimary, marginBottom: spacing.xs }]}>Posted by</Text>
         <Text style={[typography.body, { color: theme.textSecondary }]}>

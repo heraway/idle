@@ -183,6 +183,12 @@ model Job {
   beforePhotoUrl String?
   afterPhotoUrl  String?
 
+  // Photos the hirer attaches at posting time so bidders can see the actual
+  // work site before committing — distinct from beforePhotoUrl/afterPhotoUrl
+  // above, which are the dispute-proof pair captured once work begins.
+  // Postgres native array, so no separate table needed for up to 5 URLs.
+  previewPhotoUrls String[] @default([])
+
   assignedAt  DateTime?
   completedAt DateTime?
   createdAt   DateTime  @default(now())
