@@ -11,7 +11,16 @@ const TITLES: Record<string, string> = {
   terms: "Terms of Service",
   privacy: "Privacy Policy",
   waiver: "Liability Waiver",
+  "id-consent": "ID Verification Consent",
   guidelines: "Community Guidelines",
+};
+
+const FILENAMES: Record<string, string> = {
+  terms: "TERMS_OF_SERVICE",
+  privacy: "PRIVACY_POLICY",
+  waiver: "LIABILITY_WAIVER",
+  "id-consent": "ID_VERIFICATION_CONSENT",
+  guidelines: "COMMUNITY_GUIDELINES",
 };
 
 export default function LegalDocScreen({ route }: any) {
@@ -22,7 +31,7 @@ export default function LegalDocScreen({ route }: any) {
     <ScrollView style={{ flex: 1, backgroundColor: theme.background }} contentContainerStyle={{ padding: spacing.lg }}>
       <Text style={[typography.h1, { color: theme.textPrimary, marginBottom: spacing.md }]}>{TITLES[doc] || "Legal"}</Text>
       <Text style={[typography.body, { color: theme.textSecondary }]}>
-        See /LEGAL/{doc === "terms" ? "TERMS_OF_SERVICE" : doc === "privacy" ? "PRIVACY_POLICY" : doc === "waiver" ? "LIABILITY_WAIVER" : "COMMUNITY_GUIDELINES"}.md
+        See /LEGAL/{FILENAMES[doc] || doc}.md
         in the repo for the full drafted text. Wire this screen to load that file (as a bundled asset or from the backend) to display it here in production.
       </Text>
     </ScrollView>

@@ -20,6 +20,7 @@ import ReportUserScreen from "../screens/Jobs/ReportUserScreen";
 
 import ChatScreen from "../screens/Chat/ChatScreen";
 import ProfileScreen from "../screens/Profile/ProfileScreen";
+import SettingsScreen from "../screens/Profile/SettingsScreen";
 import ChangePasswordScreen from "../screens/Profile/ChangePasswordScreen";
 import LegalDocScreen from "../screens/Profile/LegalDocScreen";
 import VerificationScreen from "../screens/Verification/VerificationScreen";
@@ -75,6 +76,7 @@ function AppNavigator() {
       <AppStack.Screen name="Chat" component={ChatScreen} options={{ title: "Chat" }} />
       <AppStack.Screen name="ReportUser" component={ReportUserScreen} options={{ title: "Report" }} />
       <AppStack.Screen name="Verification" component={VerificationScreen} options={{ title: "Verification" }} />
+      <AppStack.Screen name="Settings" component={SettingsScreen} options={{ title: "Settings" }} />
       <AppStack.Screen name="ChangePassword" component={ChangePasswordScreen} options={{ title: "Change Password" }} />
       <AppStack.Screen name="LegalDoc" component={LegalDocScreen} options={{ title: "" }} />
       <AppStack.Screen name="AdminDashboard" component={AdminDashboardScreen} options={{ title: "Admin" }} />

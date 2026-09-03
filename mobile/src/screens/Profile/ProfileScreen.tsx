@@ -2,18 +2,35 @@ import React from "react";
 import { View, Text, ScrollView, TouchableOpacity } from "react-native";
 import { useTheme } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
-import { Card, Badge, Button, ScreenTitle } from "../../components/UI";
+import { Card, Badge, Button } from "../../components/UI";
 import { spacing, typography, radius } from "../../theme/theme";
 
 export default function ProfileScreen({ navigation }: any) {
-  const { theme, preference, setPreference } = useTheme();
+  const { theme } = useTheme();
   const { user, logout } = useAuth();
 
   if (!user) return null;
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.background }} contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing.xl }}>
-      <ScreenTitle>Profile</ScreenTitle>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md }}>
+        <Text style={[typography.h1, { color: theme.textPrimary }]}>Profile</Text>
+        <TouchableOpacity
+          onPress={() => navigation.navigate("Settings")}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityLabel="Settings"
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: radius.pill,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: theme.chipBackground,
+          }}
+        >
+          <Text style={{ fontSize: 18 }}>⚙️</Text>
+        </TouchableOpacity>
+      </View>
 
       <Card>
         <Text style={[typography.h2, { color: theme.textPrimary }]}>{user.firstName} {user.lastName}</Text>
@@ -41,39 +58,6 @@ export default function ProfileScreen({ navigation }: any) {
           Some jobs (driving, in-home work, childcare) require you to be ID-verified before you can bid. Verify once, reuse everywhere.
         </Text>
         <Button title="Go to verification" variant="secondary" onPress={() => navigation.navigate("Verification")} />
-      </Card>
-
-      <Card>
-        <Text style={[typography.h3, { color: theme.textPrimary, marginBottom: spacing.sm }]}>Appearance</Text>
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          {(["light", "dark", "system"] as const).map((p) => (
-            <TouchableOpacity
-              key={p}
-              onPress={() => setPreference(p)}
-              style={{
-                flex: 1,
-                paddingVertical: 10,
-                borderRadius: radius.md,
-                alignItems: "center",
-                backgroundColor: preference === p ? theme.primary : theme.chipBackground,
-              }}
-            >
-              <Text style={{ color: preference === p ? theme.textInverse : theme.chipText, fontWeight: "600", textTransform: "capitalize" }}>{p}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </Card>
-
-      <Card>
-        <Text style={[typography.h3, { color: theme.textPrimary, marginBottom: spacing.sm }]}>Account & Security</Text>
-        <Button title="Change Password" variant="secondary" onPress={() => navigation.navigate("ChangePassword")} />
-      </Card>
-
-      <Card>
-        <Text style={[typography.h3, { color: theme.textPrimary, marginBottom: spacing.sm }]}>Legal</Text>
-        <Button title="Terms of Service" variant="secondary" onPress={() => navigation.navigate("LegalDoc", { doc: "terms" })} style={{ marginBottom: spacing.sm }} />
-        <Button title="Privacy Policy" variant="secondary" onPress={() => navigation.navigate("LegalDoc", { doc: "privacy" })} style={{ marginBottom: spacing.sm }} />
-        <Button title="Community Guidelines" variant="secondary" onPress={() => navigation.navigate("LegalDoc", { doc: "guidelines" })} />
       </Card>
 
       {(user.role === "ADMIN" || user.role === "SUPERADMIN") && (
