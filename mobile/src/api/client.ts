@@ -89,9 +89,19 @@ export async function apiUpload<T = any>(path: string, formData: FormData): Prom
 // "Unsupported FormDataPart implementation" instead. A real Blob is always
 // accepted, so this converts a local picker/camera uri into one; use it
 // everywhere a photo gets appended to a FormData before uploading.
-export async function uriToBlob(uri: string): Promise<Blob> {
+//
+// Local file:// fetches (especially on Android) don't always come back with
+// a usable Content-Type, so the resulting Blob's `.type` can be empty or
+// "application/octet-stream" — the backend's image-type check then rejects
+// it as "not an allowed image type" even though it's a perfectly good photo.
+// Force a sane type whenever the blob didn't get one.
+export async function uriToBlob(uri: string, fallbackMimeType = "image/jpeg"): Promise<Blob> {
   const response = await fetch(uri);
-  return await response.blob();
+  const blob = await response.blob();
+  if (!blob.type || blob.type === "application/octet-stream") {
+    return new Blob([blob], { type: fallbackMimeType });
+  }
+  return blob;
 }
 
 export { API_URL };
