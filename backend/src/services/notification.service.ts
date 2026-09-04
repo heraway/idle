@@ -19,3 +19,11 @@ export async function notifyBidAccepted(workerId: string, jobTitle: string) {
 export async function notifyJobSubmitted(hirerId: string, jobTitle: string) {
   await sendPush(hirerId, "Job marked complete", `"${jobTitle}" is ready for your review`);
 }
+
+export async function notifyNewQuestion(hirerId: string, jobTitle: string) {
+  await sendPush(hirerId, "New question on your job", `Someone asked a question about "${jobTitle}"`);
+}
+
+export async function notifyQuestionAnswered(askerId: string, jobTitle: string) {
+  await sendPush(askerId, "Your question was answered", `The poster of "${jobTitle}" replied to your question`);
+}

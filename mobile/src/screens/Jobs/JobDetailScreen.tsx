@@ -26,6 +26,8 @@ export default function JobDetailScreen({ route, navigation }: any) {
   const [loading, setLoading] = useState(true);
   const [bidAmount, setBidAmount] = useState("");
   const [bidMessage, setBidMessage] = useState("");
+  const [questionText, setQuestionText] = useState("");
+  const [answerDrafts, setAnswerDrafts] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -73,6 +75,28 @@ export default function JobDetailScreen({ route, navigation }: any) {
       load();
     } catch (e: any) {
       Alert.alert("Error", e.message);
+    }
+  };
+
+  const askQuestion = async () => {
+    try {
+      await api("/questions", { method: "POST", body: { jobId: job.id, body: questionText.trim() } });
+      setQuestionText("");
+      load();
+    } catch (e: any) {
+      Alert.alert("Couldn't post question", e.message);
+    }
+  };
+
+  const answerQuestion = async (questionId: string) => {
+    const text = (answerDrafts[questionId] || "").trim();
+    if (!text) return;
+    try {
+      await api(`/questions/${questionId}/answer`, { method: "PATCH", body: { answerBody: text } });
+      setAnswerDrafts((d) => ({ ...d, [questionId]: "" }));
+      load();
+    } catch (e: any) {
+      Alert.alert("Couldn't post reply", e.message);
     }
   };
 
@@ -169,6 +193,71 @@ export default function JobDetailScreen({ route, navigation }: any) {
         <Text style={[typography.body, { color: theme.textSecondary }]}>
           {job.hirer?.firstName} {job.hirer?.lastName} · ⭐ {job.hirer?.avgRating ?? "—"}
         </Text>
+      </Card>
+
+      {/* Q&A — public thread so the same question isn't answered redundantly
+          one-on-one to every prospective bidder */}
+      <Card>
+        <Text style={[typography.h3, { color: theme.textPrimary, marginBottom: spacing.sm }]}>Questions & answers</Text>
+        {(!job.questions || job.questions.length === 0) && (
+          <Text style={{ color: theme.textSecondary, marginBottom: spacing.sm }}>No questions yet.</Text>
+        )}
+        {job.questions?.map((q) => (
+          <View key={q.id} style={{ borderTopWidth: 1, borderTopColor: theme.border, paddingTop: spacing.sm, marginTop: spacing.sm }}>
+            <Text style={[typography.bodyBold, { color: theme.textPrimary }]}>
+              {q.asker?.firstName} {q.asker?.lastName}
+            </Text>
+            <Text style={[typography.body, { color: theme.textPrimary, marginBottom: spacing.xs }]}>{q.body}</Text>
+            {q.answerBody ? (
+              <View style={{ backgroundColor: theme.surfaceAlt, borderRadius: radius.md, padding: spacing.sm }}>
+                <Text style={[typography.caption, { color: theme.textSecondary, marginBottom: 2 }]}>Poster replied</Text>
+                <Text style={[typography.body, { color: theme.textPrimary }]}>{q.answerBody}</Text>
+              </View>
+            ) : isHirer ? (
+              <View style={{ marginTop: spacing.xs }}>
+                <TextInput
+                  placeholder="Write a reply..."
+                  placeholderTextColor={theme.textSecondary}
+                  value={answerDrafts[q.id] || ""}
+                  onChangeText={(t) => setAnswerDrafts((d) => ({ ...d, [q.id]: t }))}
+                  style={{ backgroundColor: theme.surfaceAlt, borderRadius: radius.md, padding: 10, color: theme.textPrimary, borderWidth: 1, borderColor: theme.border, marginBottom: spacing.xs }}
+                />
+                <Button
+                  title="Post reply"
+                  variant="secondary"
+                  onPress={() => answerQuestion(q.id)}
+                  disabled={!(answerDrafts[q.id] || "").trim()}
+                />
+              </View>
+            ) : (
+              <Text style={{ color: theme.textSecondary, fontStyle: "italic" }}>Awaiting reply from the poster</Text>
+            )}
+          </View>
+        ))}
+
+        {!isHirer && (
+          <View style={{ marginTop: spacing.md }}>
+            <TextInput
+              placeholder="Ask the poster a question..."
+              placeholderTextColor={theme.textSecondary}
+              value={questionText}
+              onChangeText={setQuestionText}
+              multiline
+              style={{
+                backgroundColor: theme.surfaceAlt,
+                borderRadius: radius.md,
+                padding: 10,
+                color: theme.textPrimary,
+                borderWidth: 1,
+                borderColor: theme.border,
+                marginBottom: spacing.sm,
+                minHeight: 60,
+                textAlignVertical: "top",
+              }}
+            />
+            <Button title="Ask question" variant="secondary" onPress={askQuestion} disabled={questionText.trim().length < 3} />
+          </View>
+        )}
       </Card>
 
       {/* Before / after proof photos */}

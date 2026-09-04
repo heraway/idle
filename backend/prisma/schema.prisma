@@ -146,6 +146,7 @@ model User {
   adminActionsOn    AdminAction[] @relation("AdminActionsOn")
   blockedUsers      Block[]       @relation("Blocker")
   blockedByUsers    Block[]       @relation("Blocked")
+  questionsAsked    JobQuestion[] @relation("QuestionsAsked")
 
   @@index([accountStatus])
 }
@@ -201,6 +202,7 @@ model Job {
   reports        Report[]
   escrow         Escrow?
   assignment     JobAssignment?
+  questions      JobQuestion[]
 
   @@index([status])
   @@index([category])
@@ -266,6 +268,28 @@ model Message {
 
   createdAt DateTime  @default(now())
   readAt    DateTime?
+
+  @@index([jobId, createdAt])
+}
+
+// Public Q&A on a job's detail screen — any prospective bidder can ask the
+// poster a question that's visible to everyone viewing the job, so the same
+// answer doesn't have to be repeated privately to each bidder. Distinct from
+// Message (the private per-job chat), which only opens up once a worker is
+// assigned. Only the job's hirer can answer; anyone can ask, including once
+// the job is no longer OPEN, so late viewers can still get context.
+model JobQuestion {
+  id      String @id @default(uuid())
+  jobId   String
+  job     Job    @relation(fields: [jobId], references: [id])
+  askerId String
+  asker   User   @relation("QuestionsAsked", fields: [askerId], references: [id])
+
+  body       String
+  answerBody String?
+  answeredAt DateTime?
+
+  createdAt DateTime @default(now())
 
   @@index([jobId, createdAt])
 }

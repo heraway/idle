@@ -193,6 +193,10 @@ jobRouter.get(
         worker: { select: { id: true, firstName: true, lastName: true, avgRating: true, avatarUrl: true, verificationStatus: true } },
         checklistItems: { orderBy: { order: "asc" } },
         bids: { include: { bidder: { select: { id: true, firstName: true, lastName: true, avgRating: true, avatarUrl: true, verificationStatus: true } } } },
+        questions: {
+          orderBy: { createdAt: "asc" },
+          include: { asker: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } } },
+        },
         escrow: true,
       },
     });
@@ -218,7 +222,7 @@ jobRouter.post(
 
     const updated = await prisma.job.update({
       where: { id: job.id },
-      data: { beforePhotoUrl: publicUrlFor(req.file.filename, req) },
+      data: { beforePhotoUrl: publicUrlFor(req.file.filename) },
     });
     res.json(updated);
   })
@@ -236,7 +240,7 @@ jobRouter.post(
 
     const updated = await prisma.job.update({
       where: { id: job.id },
-      data: { afterPhotoUrl: publicUrlFor(req.file.filename, req) },
+      data: { afterPhotoUrl: publicUrlFor(req.file.filename) },
     });
     res.json(updated);
   })
@@ -266,7 +270,7 @@ jobRouter.post(
       throw new ApiError(400, `A job can have at most ${MAX_PREVIEW_PHOTOS} preview photos (${job.previewPhotoUrls.length} already added)`);
     }
 
-    const newUrls = files.map((f) => publicUrlFor(f.filename, req));
+    const newUrls = files.map((f) => publicUrlFor(f.filename));
     const updated = await prisma.job.update({
       where: { id: job.id },
       data: { previewPhotoUrls: { push: newUrls } },

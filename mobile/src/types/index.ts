@@ -44,8 +44,20 @@ export interface Job {
   worker?: Partial<User>;
   bids?: Bid[];
   checklistItems?: ChecklistItem[];
+  questions?: JobQuestion[];
   _count?: { bids: number };
   distanceKm?: number;
+}
+
+export interface JobQuestion {
+  id: string;
+  jobId: string;
+  askerId: string;
+  body: string;
+  answerBody?: string | null;
+  answeredAt?: string | null;
+  createdAt: string;
+  asker?: Partial<User>;
 }
 
 export interface Bid {
