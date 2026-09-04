@@ -37,7 +37,9 @@ export default function PostJobScreen({ navigation }: any) {
     if (remaining <= 0) return;
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      // ImagePicker.MediaTypeOptions is deprecated as of newer expo-image-picker
+      // versions — this is the replacement syntax (array of MediaType strings).
+      mediaTypes: ["images"],
       allowsMultipleSelection: true,
       selectionLimit: remaining,
       quality: 0.7,

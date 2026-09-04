@@ -48,7 +48,7 @@ export default function RegisterScreen({ route, navigation }: any) {
 
         <Input label="First name" value={firstName} onChangeText={setFirstName} placeholder="Enter your first name" />
         <Input label="Last name" value={lastName} onChangeText={setLastName} placeholder="Enter your last name" />
-        <Text style={{ color: theme.textMuted, fontSize: 12, marginTop: -spacing.sm, marginBottom: spacing.md }}>
+        <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: -spacing.sm, marginBottom: spacing.md }}>
           Please use your real name. Idle relies on verified identities to keep hirers and workers accountable to
           each other. Once you're signed in, head to Settings › Verification to upload ID and get a verified badge —
           it's optional, but jobs that require it will only accept bids from verified users.
