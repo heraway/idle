@@ -218,7 +218,7 @@ jobRouter.post(
 
     const updated = await prisma.job.update({
       where: { id: job.id },
-      data: { beforePhotoUrl: publicUrlFor(req.file.filename) },
+      data: { beforePhotoUrl: publicUrlFor(req.file.filename, req) },
     });
     res.json(updated);
   })
@@ -236,7 +236,7 @@ jobRouter.post(
 
     const updated = await prisma.job.update({
       where: { id: job.id },
-      data: { afterPhotoUrl: publicUrlFor(req.file.filename) },
+      data: { afterPhotoUrl: publicUrlFor(req.file.filename, req) },
     });
     res.json(updated);
   })
@@ -266,7 +266,7 @@ jobRouter.post(
       throw new ApiError(400, `A job can have at most ${MAX_PREVIEW_PHOTOS} preview photos (${job.previewPhotoUrls.length} already added)`);
     }
 
-    const newUrls = files.map((f) => publicUrlFor(f.filename));
+    const newUrls = files.map((f) => publicUrlFor(f.filename, req));
     const updated = await prisma.job.update({
       where: { id: job.id },
       data: { previewPhotoUrls: { push: newUrls } },

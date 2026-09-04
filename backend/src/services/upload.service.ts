@@ -37,7 +37,19 @@ export const upload = multer({
   },
 });
 
-export function publicUrlFor(filename: string) {
-  const base = process.env.PUBLIC_BASE_URL || "http://localhost:4000";
+// Builds the URL a client uses to actually fetch an uploaded file.
+//
+// If PUBLIC_BASE_URL is set (e.g. once this is deployed somewhere real),
+// that's used as-is. Otherwise — the common case in local dev — we derive
+// the base from the incoming request itself (req.protocol + req.get("host"))
+// rather than hardcoding "http://localhost:4000". "localhost" only means
+// "this backend" when the *server* is talking to itself; a phone on the
+// same Wi-Fi reaches the backend via the PC's LAN IP, and "localhost" on
+// the phone means the phone. Using the request's own Host header guarantees
+// the returned URL is reachable by whatever just made the request, LAN IP
+// or otherwise, with no manual config and no breakage when the PC's IP
+// changes on a new network.
+export function publicUrlFor(filename: string, req?: { protocol: string; get(name: string): string | undefined }) {
+  const base = process.env.PUBLIC_BASE_URL || (req ? `${req.protocol}://${req.get("host")}` : "http://localhost:4000");
   return `${base}/uploads/${filename}`;
 }

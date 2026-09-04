@@ -48,7 +48,7 @@ checklistRouter.post(
       data: {
         isDone: true,
         doneAt: new Date(),
-        proofPhotoUrl: req.file ? publicUrlFor(req.file.filename) : item.proofPhotoUrl,
+        proofPhotoUrl: req.file ? publicUrlFor(req.file.filename, req) : item.proofPhotoUrl,
       },
     });
 
@@ -58,7 +58,7 @@ checklistRouter.post(
         senderId: req.auth!.userId,
         systemEvent: "CHECKLIST_ITEM_DONE",
         body: `Marked "${item.label}" as done`,
-        imageUrl: req.file ? publicUrlFor(req.file.filename) : null,
+        imageUrl: req.file ? publicUrlFor(req.file.filename, req) : null,
       },
     });
 

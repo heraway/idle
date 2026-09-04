@@ -58,7 +58,7 @@ messageRouter.post(
         jobId,
         senderId: req.auth!.userId,
         body: req.body.body || null,
-        imageUrl: publicUrlFor(req.file.filename),
+        imageUrl: publicUrlFor(req.file.filename, req),
       },
     });
     res.status(201).json(message);
