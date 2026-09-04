@@ -83,4 +83,15 @@ export async function apiUpload<T = any>(path: string, formData: FormData): Prom
   return data as T;
 }
 
+// Newer Expo SDKs (53+) ship a stricter, spec-compliant global FormData that
+// no longer accepts the classic React Native shorthand —
+// `form.append("photo", { uri, name, type })` — as a valid part, and throws
+// "Unsupported FormDataPart implementation" instead. A real Blob is always
+// accepted, so this converts a local picker/camera uri into one; use it
+// everywhere a photo gets appended to a FormData before uploading.
+export async function uriToBlob(uri: string): Promise<Blob> {
+  const response = await fetch(uri);
+  return await response.blob();
+}
+
 export { API_URL };

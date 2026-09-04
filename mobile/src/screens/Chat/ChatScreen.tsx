@@ -3,7 +3,7 @@ import { View, Text, FlatList, TextInput, TouchableOpacity, Image, KeyboardAvoid
 import * as ImagePicker from "expo-image-picker";
 import { useTheme } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
-import { api, apiUpload } from "../../api/client";
+import { api, apiUpload, uriToBlob } from "../../api/client";
 import { Message } from "../../types";
 import { spacing, typography, radius } from "../../theme/theme";
 
@@ -43,7 +43,8 @@ export default function ChatScreen({ route }: any) {
 
     const form = new FormData();
     form.append("jobId", jobId);
-    form.append("photo", { uri: result.assets[0].uri, name: "photo.jpg", type: "image/jpeg" } as any);
+    const blob = await uriToBlob(result.assets[0].uri);
+    form.append("photo", blob, "photo.jpg");
     await apiUpload("/messages/with-photo", form);
     load();
   };

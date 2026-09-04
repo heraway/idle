@@ -3,7 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, Alert, Image } from "react-na
 import * as Location from "expo-location";
 import * as ImagePicker from "expo-image-picker";
 import { useTheme } from "../../context/ThemeContext";
-import { api, apiUpload } from "../../api/client";
+import { api, apiUpload, uriToBlob } from "../../api/client";
 import { Button, Input, ScreenTitle } from "../../components/UI";
 import { spacing, typography, radius } from "../../theme/theme";
 import { JOB_CATEGORIES as CATEGORIES } from "../../constants/categories";
@@ -78,9 +78,10 @@ export default function PostJobScreen({ navigation }: any) {
 
       if (photos.length > 0) {
         const form = new FormData();
-        photos.forEach((uri, i) => {
-          form.append("photos", { uri, name: `photo${i}.jpg`, type: "image/jpeg" } as any);
-        });
+        for (let i = 0; i < photos.length; i++) {
+          const blob = await uriToBlob(photos[i]);
+          form.append("photos", blob, `photo${i}.jpg`);
+        }
         // Best-effort — the job itself is already posted at this point, so a
         // photo-upload hiccup shouldn't block the whole flow or lose the job.
         await apiUpload(`/jobs/${job.id}/preview-photos`, form).catch((e) =>
@@ -89,7 +90,10 @@ export default function PostJobScreen({ navigation }: any) {
       }
 
       Alert.alert("Job posted!", "Your job is now live and open for bids.");
-      navigation.navigate("JobFeed");
+      // "JobFeed" isn't a registered route — the feed screen is named "Jobs"
+      // and lives inside the MainTabs tab navigator, so it needs to be
+      // targeted explicitly rather than navigated to directly by its own name.
+      navigation.navigate("MainTabs", { screen: "Jobs" });
     } catch (e: any) {
       Alert.alert("Couldn't post job", e.message);
     } finally {

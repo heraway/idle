@@ -3,7 +3,7 @@ import { View, Text, ScrollView, Image, TouchableOpacity, Alert, TextInput } fro
 import * as ImagePicker from "expo-image-picker";
 import { useTheme } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
-import { api, apiUpload, API_URL } from "../../api/client";
+import { api, apiUpload, uriToBlob, API_URL } from "../../api/client";
 import { Job, Bid } from "../../types";
 import { Card, Badge, Button, EmptyState } from "../../components/UI";
 import { spacing, typography, radius } from "../../theme/theme";
@@ -83,7 +83,8 @@ export default function JobDetailScreen({ route, navigation }: any) {
     if (result.canceled) return;
 
     const form = new FormData();
-    form.append("photo", { uri: result.assets[0].uri, name: "photo.jpg", type: "image/jpeg" } as any);
+    const blob = await uriToBlob(result.assets[0].uri);
+    form.append("photo", blob, "photo.jpg");
     try {
       await apiUpload(`/jobs/${job.id}/${endpoint}`, form);
       load();
@@ -98,7 +99,8 @@ export default function JobDetailScreen({ route, navigation }: any) {
 
     const form = new FormData();
     if (result && !result.canceled) {
-      form.append("photo", { uri: result.assets[0].uri, name: "proof.jpg", type: "image/jpeg" } as any);
+      const blob = await uriToBlob(result.assets[0].uri);
+      form.append("photo", blob, "proof.jpg");
     }
     try {
       await apiUpload(`/checklist/${itemId}/complete`, form);
