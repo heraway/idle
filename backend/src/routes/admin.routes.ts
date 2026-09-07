@@ -119,7 +119,11 @@ adminRouter.get(
     const jobs = await prisma.job.findMany({
       where: status ? { status: status as any } : undefined,
       orderBy: { createdAt: "desc" },
-      include: { hirer: { select: { id: true, firstName: true, lastName: true } }, worker: { select: { id: true, firstName: true, lastName: true } }, escrow: true },
+      include: {
+        hirer: { select: { id: true, firstName: true, lastName: true } },
+        assignments: { include: { worker: { select: { id: true, firstName: true, lastName: true } } } },
+        escrow: true,
+      },
       take: 100,
     });
     res.json(jobs);

@@ -23,16 +23,18 @@ ratingRouter.post(
   requireAuth,
   asyncHandler(async (req, res) => {
     const data = rateSchema.parse(req.body);
-    const job = await prisma.job.findUnique({ where: { id: data.jobId } });
+    const job = await prisma.job.findUnique({ where: { id: data.jobId }, include: { assignments: true } });
     if (!job) throw new ApiError(404, "Job not found");
     if (job.status !== "COMPLETED") throw new ApiError(400, "You can only rate after the job is completed");
 
     const isHirer = job.hirerId === req.auth!.userId;
-    const isWorker = job.workerId === req.auth!.userId;
+    const isWorker = job.assignments.some((assignment) => assignment.workerId === req.auth!.userId);
     if (!isHirer && !isWorker) throw new ApiError(403, "You were not part of this job");
 
-    const expectedTarget = isHirer ? job.workerId : job.hirerId;
-    if (data.toUserId !== expectedTarget) throw new ApiError(400, "You can only rate the other party on this job");
+    const isAssignedWorkerTarget = job.assignments.some((assignment) => assignment.workerId === data.toUserId);
+    if (isHirer ? !isAssignedWorkerTarget : data.toUserId !== job.hirerId) {
+      throw new ApiError(400, "You can only rate another party on this job");
+    }
 
     const rating = await prisma.rating.upsert({
       where: { jobId_fromUserId_toUserId: { jobId: data.jobId, fromUserId: req.auth!.userId, toUserId: data.toUserId } },

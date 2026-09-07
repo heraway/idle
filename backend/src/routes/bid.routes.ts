@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../config/prisma";
 import { requireAuth } from "../middleware/auth";
@@ -24,7 +25,7 @@ bidRouter.post(
     const data = bidSchema.parse(req.body);
     const job = await prisma.job.findUnique({ where: { id: data.jobId } });
     if (!job) throw new ApiError(404, "Job not found");
-    if (job.status !== "OPEN") throw new ApiError(400, "This job is no longer accepting bids");
+    if (job.status !== "OPEN" || job.expiresAt <= new Date()) throw new ApiError(400, "This job is no longer accepting bids");
     if (job.hirerId === req.auth!.userId) throw new ApiError(400, "You cannot bid on your own job");
 
     // Gate: if the hirer required ID verification, block unverified bidders up front.
@@ -62,34 +63,57 @@ bidRouter.post(
 );
 
 // ------------------------------------------------------------
-// ACCEPT A BID — assigns worker, rejects other bids, opens escrow
+// ACCEPT A BID — assigns a worker and closes bidding only when all slots are filled.
 // ------------------------------------------------------------
 bidRouter.post(
   "/:id/accept",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const bid = await prisma.bid.findUnique({ where: { id: req.params.id }, include: { job: true } });
-    if (!bid) throw new ApiError(404, "Bid not found");
-    if (bid.job.hirerId !== req.auth!.userId) throw new ApiError(403, "Only the hirer can accept bids");
-    if (bid.job.status !== "OPEN") throw new ApiError(400, "This job is no longer open");
+    const acceptance = await prisma.$transaction(async (tx) => {
+      const bid = await tx.bid.findUnique({ where: { id: req.params.id }, include: { job: true } });
+      if (!bid) throw new ApiError(404, "Bid not found");
+      if (bid.job.hirerId !== req.auth!.userId) throw new ApiError(403, "Only the hirer can accept bids");
+      if (bid.job.status !== "OPEN") throw new ApiError(400, "This job is no longer open");
+      if (bid.status !== "PENDING") throw new ApiError(400, "This bid is no longer pending");
 
-    await prisma.$transaction([
-      prisma.bid.update({ where: { id: bid.id }, data: { status: "ACCEPTED" } }),
-      prisma.bid.updateMany({
-        where: { jobId: bid.jobId, id: { not: bid.id }, status: "PENDING" },
-        data: { status: "REJECTED" },
-      }),
-      prisma.job.update({
+      const acceptedCount = await tx.jobAssignment.count({ where: { jobId: bid.jobId } });
+      if (acceptedCount >= bid.job.workersNeeded) throw new ApiError(400, "All worker slots are already filled");
+
+      const finalSlot = acceptedCount + 1 >= bid.job.workersNeeded;
+      await tx.bid.update({ where: { id: bid.id }, data: { status: "ACCEPTED" } });
+      await tx.jobAssignment.create({ data: { jobId: bid.jobId, bidId: bid.id, workerId: bid.bidderId } });
+      if (finalSlot) {
+        await tx.bid.updateMany({
+          where: { jobId: bid.jobId, id: { not: bid.id }, status: "PENDING" },
+          data: { status: "REJECTED" },
+        });
+      }
+      await tx.job.update({
         where: { id: bid.jobId },
-        data: { status: "ASSIGNED", workerId: bid.bidderId, assignedAt: new Date() },
-      }),
-      prisma.jobAssignment.create({ data: { jobId: bid.jobId, bidId: bid.id } }),
-      prisma.message.create({
-        data: { jobId: bid.jobId, senderId: req.auth!.userId, systemEvent: "BID_ACCEPTED", body: "Bid accepted — job assigned." },
-      }),
-    ]);
+        data: { status: finalSlot ? "ASSIGNED" : "OPEN", assignedAt: finalSlot ? new Date() : undefined },
+      });
+      await tx.message.create({
+        data: {
+          jobId: bid.jobId,
+          senderId: req.auth!.userId,
+          systemEvent: "BID_ACCEPTED",
+          body: finalSlot ? "Bid accepted — all worker slots are filled." : "Bid accepted — more worker slots remain.",
+        },
+      });
+      const acceptedBids = await tx.bid.aggregate({
+        where: { jobId: bid.jobId, status: "ACCEPTED" },
+        _sum: { amount: true },
+      });
+      return {
+        bidderId: bid.bidderId,
+        jobTitle: bid.job.title,
+        status: finalSlot ? "ASSIGNED" : "OPEN",
+        acceptedCount: acceptedCount + 1,
+        escrowAmount: acceptedBids._sum.amount ?? 0,
+      };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
-    await notifyBidAccepted(bid.bidderId, bid.job.title);
-    res.json({ ok: true });
+    await notifyBidAccepted(acceptance.bidderId, acceptance.jobTitle);
+    res.json({ ok: true, status: acceptance.status, acceptedCount: acceptance.acceptedCount, escrowAmount: acceptance.escrowAmount });
   })
 );

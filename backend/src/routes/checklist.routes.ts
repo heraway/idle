@@ -12,7 +12,8 @@ export const checklistRouter = Router();
 async function assertWorkerOnJob(jobId: string, userId: string) {
   const job = await prisma.job.findUnique({ where: { id: jobId } });
   if (!job) throw new ApiError(404, "Job not found");
-  if (job.workerId !== userId) throw new ApiError(403, "Only the assigned worker can update this checklist");
+  const assignment = await prisma.jobAssignment.findFirst({ where: { jobId, workerId: userId } });
+  if (!assignment) throw new ApiError(403, "Only an assigned worker can update this checklist");
   return job;
 }
 

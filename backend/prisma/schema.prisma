@@ -135,7 +135,7 @@ model User {
   updatedAt DateTime @updatedAt
 
   jobsPosted        Job[]         @relation("HirerJobs")
-  jobsWorking       Job[]         @relation("WorkerJobs")
+  assignments       JobAssignment[] @relation("WorkerAssignments")
   bids              Bid[]
   messagesSent      Message[]
   ratingsGiven      Rating[]      @relation("RatingsGiven")
@@ -155,9 +155,6 @@ model Job {
   id       String  @id @default(uuid())
   hirerId  String
   hirer    User    @relation("HirerJobs", fields: [hirerId], references: [id])
-  workerId String?
-  worker   User?   @relation("WorkerJobs", fields: [workerId], references: [id])
-
   title       String
   description String
   category    String
@@ -191,6 +188,7 @@ model Job {
   previewPhotoUrls String[] @default([])
 
   assignedAt  DateTime?
+  expiresAt   DateTime
   completedAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -201,7 +199,7 @@ model Job {
   ratings        Rating[]
   reports        Report[]
   escrow         Escrow?
-  assignment     JobAssignment?
+  assignments    JobAssignment[]
   questions      JobQuestion[]
 
   @@index([status])
@@ -232,11 +230,16 @@ model Bid {
 // Audit link recording which accepted bid produced a job's assignment.
 model JobAssignment {
   id        String   @id @default(uuid())
-  jobId     String   @unique
+  jobId     String
   job       Job      @relation(fields: [jobId], references: [id])
   bidId     String   @unique
   bid       Bid      @relation(fields: [bidId], references: [id])
+  workerId  String
+  worker    User     @relation("WorkerAssignments", fields: [workerId], references: [id])
   createdAt DateTime @default(now())
+
+  @@index([jobId])
+  @@index([workerId])
 }
 
 model ChecklistItem {

@@ -11,7 +11,8 @@ export const messageRouter = Router();
 async function assertParticipant(jobId: string, userId: string) {
   const job = await prisma.job.findUnique({ where: { id: jobId } });
   if (!job) throw new ApiError(404, "Job not found");
-  if (job.hirerId !== userId && job.workerId !== userId) {
+  const isAssignedWorker = await prisma.jobAssignment.findFirst({ where: { jobId, workerId: userId } });
+  if (job.hirerId !== userId && !isAssignedWorker) {
     throw new ApiError(403, "You are not part of this job's conversation");
   }
   return job;

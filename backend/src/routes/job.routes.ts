@@ -32,6 +32,8 @@ const createJobSchema = z.object({
   checklist: z.array(z.string().min(1)).optional(), // initial task list, ticked off during the job
 });
 
+const DEFAULT_JOB_LIFETIME_DAYS = 30;
+
 jobRouter.post(
   "/",
   requireAuth,
@@ -58,6 +60,7 @@ jobRouter.post(
         durationEstimate: data.durationEstimate,
         workersNeeded: data.workersNeeded,
         hoursPerDayNeeded: data.hoursPerDayNeeded,
+        expiresAt: new Date(Date.now() + DEFAULT_JOB_LIFETIME_DAYS * 24 * 60 * 60 * 1000),
         checklistItems: data.checklist
           ? { create: data.checklist.map((label, i) => ({ label, order: i })) }
           : undefined,
@@ -114,11 +117,11 @@ function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
 // which is why report.routes.ts + admin escalation exist as the backstop
 // for a completed job that ends up unsafe.
 // ------------------------------------------------------------
-function maskJobLocation<T extends { hirerId: string; workerId?: string | null; latitude: number; longitude: number; address?: string | null }>(
+function maskJobLocation<T extends { hirerId: string; assignments?: { workerId: string }[]; latitude: number; longitude: number; address?: string | null }>(
   job: T,
   viewer?: { userId: string; role: string }
 ): T {
-  const isParticipant = !!viewer && (viewer.userId === job.hirerId || viewer.userId === job.workerId);
+  const isParticipant = !!viewer && (viewer.userId === job.hirerId || job.assignments?.some((assignment) => assignment.workerId === viewer.userId));
   const isAdmin = !!viewer && (viewer.role === "ADMIN" || viewer.role === "SUPERADMIN");
   if (isParticipant || isAdmin) return job;
 
@@ -135,7 +138,7 @@ jobRouter.get(
   asyncHandler(async (req, res) => {
     const q = searchSchema.parse(req.query);
 
-    const where: any = { status: q.status };
+    const where: any = q.status === "OPEN" ? { status: q.status, expiresAt: { gt: new Date() } } : { status: q.status };
     if (q.category) where.category = { equals: q.category, mode: "insensitive" };
     if (q.payType) where.payType = q.payType;
     if (q.minWorkers) where.workersNeeded = { gte: q.minWorkers };
@@ -156,7 +159,7 @@ jobRouter.get(
 
     let jobs = await prisma.job.findMany({
       where,
-      include: { hirer: { select: { id: true, firstName: true, lastName: true, avgRating: true, avatarUrl: true } }, _count: { select: { bids: true } } },
+      include: { hirer: { select: { id: true, firstName: true, lastName: true, avgRating: true, avatarUrl: true } }, assignments: { select: { workerId: true } }, _count: { select: { bids: true } } },
       orderBy: { createdAt: "desc" },
       take: q.lat && q.lng ? undefined : q.pageSize, // if geo-filtering, paginate after distance filter
       skip: q.lat && q.lng ? undefined : (q.page - 1) * q.pageSize,
@@ -190,7 +193,7 @@ jobRouter.get(
       where: { id: req.params.id },
       include: {
         hirer: { select: { id: true, firstName: true, lastName: true, avgRating: true, avatarUrl: true, verificationStatus: true } },
-        worker: { select: { id: true, firstName: true, lastName: true, avgRating: true, avatarUrl: true, verificationStatus: true } },
+        assignments: { include: { worker: { select: { id: true, firstName: true, lastName: true, avgRating: true, avatarUrl: true, verificationStatus: true } } } },
         checklistItems: { orderBy: { order: "asc" } },
         bids: { include: { bidder: { select: { id: true, firstName: true, lastName: true, avgRating: true, avatarUrl: true, verificationStatus: true } } } },
         questions: {
@@ -201,6 +204,10 @@ jobRouter.get(
       },
     });
     if (!job) throw new ApiError(404, "Job not found");
+    if (job.status === "OPEN" && job.expiresAt <= new Date()) {
+      const expired = await prisma.job.update({ where: { id: job.id }, data: { status: "CANCELLED" } });
+      return res.json(maskJobLocation(expired, req.auth ? { userId: req.auth.userId, role: req.auth.role } : undefined));
+    }
 
     const masked = maskJobLocation(job, req.auth ? { userId: req.auth.userId, role: req.auth.role } : undefined);
     res.json(masked);

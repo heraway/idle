@@ -19,7 +19,6 @@ export interface User {
 export interface Job {
   id: string;
   hirerId: string;
-  workerId?: string | null;
   title: string;
   description: string;
   category: string;
@@ -37,16 +36,23 @@ export interface Job {
   workersNeeded: number;
   hoursPerDayNeeded?: number | null;
   status: "OPEN" | "ASSIGNED" | "IN_PROGRESS" | "SUBMITTED" | "COMPLETED" | "DISPUTED" | "CANCELLED";
+  expiresAt: string;
   beforePhotoUrl?: string | null;
   afterPhotoUrl?: string | null;
   previewPhotoUrls: string[];
   hirer?: Partial<User>;
-  worker?: Partial<User>;
+  assignments?: JobAssignment[];
   bids?: Bid[];
   checklistItems?: ChecklistItem[];
   questions?: JobQuestion[];
   _count?: { bids: number };
   distanceKm?: number;
+}
+
+export interface JobAssignment {
+  id: string;
+  workerId: string;
+  worker?: Partial<User>;
 }
 
 export interface JobQuestion {

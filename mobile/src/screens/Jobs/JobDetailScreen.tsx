@@ -54,7 +54,8 @@ export default function JobDetailScreen({ route, navigation }: any) {
   }
 
   const isHirer = user?.id === job.hirerId;
-  const isWorker = user?.id === job.workerId;
+  const isWorker = job.assignments?.some((assignment) => assignment.workerId === user?.id) ?? false;
+  const assignedWorkerId = job.assignments?.[0]?.workerId;
   const myBid = job.bids?.find((b) => b.bidderId === user?.id);
 
   const placeBid = async () => {
@@ -69,9 +70,13 @@ export default function JobDetailScreen({ route, navigation }: any) {
 
   const acceptBid = async (bid: Bid) => {
     try {
-      await api(`/bids/${bid.id}/accept`, { method: "POST" });
-      await api("/escrow/fund", { method: "POST", body: { jobId: job.id, amount: bid.amount } });
-      Alert.alert("Bid accepted", "Payment is now held in escrow until you confirm the job is done.");
+      const result = await api<{ status: Job["status"]; escrowAmount: number }>(`/bids/${bid.id}/accept`, { method: "POST" });
+      if (result.status === "ASSIGNED") {
+        await api("/escrow/fund", { method: "POST", body: { jobId: job.id, amount: result.escrowAmount } });
+        Alert.alert("Bid accepted", "All worker slots are filled and payment is now held in escrow.");
+      } else {
+        Alert.alert("Bid accepted", "The worker was added. Accept more bids to fill the remaining slots.");
+      }
       load();
     } catch (e: any) {
       Alert.alert("Error", e.message);
@@ -400,7 +405,7 @@ export default function JobDetailScreen({ route, navigation }: any) {
         <Button
           title="Report a problem"
           variant="secondary"
-          onPress={() => navigation.navigate("ReportUser", { jobId: job.id, targetUserId: isHirer ? job.workerId : job.hirerId })}
+          onPress={() => navigation.navigate("ReportUser", { jobId: job.id, targetUserId: isHirer ? assignedWorkerId : job.hirerId })}
           style={{ marginTop: spacing.sm }}
         />
       )}

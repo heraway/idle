@@ -1,19 +1,21 @@
-/**
- * EMAIL SERVICE (stub)
- * -------------------------------------------------------------
- * Ships as a MOCK — logs to console instead of sending real email, so the
- * whole password-reset flow runs for $0 with no email-provider signup.
- *
- * PRODUCTION PATH: any transactional email provider works — Resend and
- * SendGrid both have generous free tiers and a simple API. Swap the body
- * of sendEmail() for a real API call; nothing else in the app needs to
- * change since every caller already goes through this one function.
- * -------------------------------------------------------------
- */
 export async function sendEmail(to: string, subject: string, body: string) {
-  // TODO(production): replace with a real provider call, e.g.:
-  //   await fetch("https://api.resend.com/emails", { ... })
-  console.log(`\n[MOCK EMAIL] To: ${to}\nSubject: ${subject}\n${body}\n`);
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM;
+  if (!apiKey || !from) {
+    console.warn("Email delivery is not configured; set RESEND_API_KEY and EMAIL_FROM.");
+    console.log(`\n[DEV EMAIL] To: ${to}\nSubject: ${subject}\n${body}\n`);
+    return;
+  }
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ from, to: [to], subject, text: body }),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Email provider rejected the message (${response.status}): ${detail}`);
+  }
 }
 
 export async function sendPasswordResetEmail(to: string, resetToken: string) {
