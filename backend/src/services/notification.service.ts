@@ -1,11 +1,45 @@
+import { prisma } from "../config/prisma";
+
 /**
- * NOTIFICATION SERVICE (stub)
- * Logs to console in dev. Swap sendPush() for Expo push notifications
- * (free, works great with React Native/Expo) in production — just POST
- * to https://exp.host/--/api/v2/push/send with the device's Expo push token.
+ * Sends an Expo push notification to the given userId if they have a registered pushToken.
+ * Uses native fetch to post directly to Expo's Push API.
  */
-export async function sendPush(userId: string, title: string, body: string) {
+export async function sendPush(userId: string, title: string, body: string, data?: Record<string, unknown>) {
   console.log(`[push -> ${userId}] ${title}: ${body}`);
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { pushToken: true } as any,
+    });
+
+    const pushToken = (user as { pushToken?: string | null })?.pushToken;
+
+    if (!pushToken || !pushToken.startsWith("ExponentPushToken")) {
+      return;
+    }
+
+    const response = await fetch("https://exp.host/--/api/v2/push/send", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Accept-encoding": "gzip, deflate",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        to: pushToken,
+        sound: "default",
+        title,
+        body,
+        data,
+      }),
+    });
+
+    const result = await response.json();
+    console.log(`[push -> ${userId}] Result:`, result);
+  } catch (error) {
+    console.error(`[push -> ${userId}] Error sending push notification:`, error);
+  }
 }
 
 export async function notifyNewBid(hirerId: string, jobTitle: string, amount: number) {

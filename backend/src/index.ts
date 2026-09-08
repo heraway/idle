@@ -3,6 +3,8 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import path from "path";
+import http from "http";
+import { Server } from "socket.io";
 import { generalLimiter } from "./middleware/rateLimit";
 import { errorHandler } from "./middleware/errorHandler";
 
@@ -20,6 +22,32 @@ import { verificationRouter } from "./routes/verification.routes";
 import { adminRouter } from "./routes/admin.routes";
 
 const app = express();
+const server = http.createServer(app);
+
+export const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
+});
+
+io.on("connection", (socket) => {
+  console.log(`Socket connected: ${socket.id}`);
+
+  socket.on("joinJobChat", (jobId: string) => {
+    socket.join(`job_${jobId}`);
+    console.log(`Socket ${socket.id} joined room job_${jobId}`);
+  });
+
+  socket.on("leaveJobChat", (jobId: string) => {
+    socket.leave(`job_${jobId}`);
+    console.log(`Socket ${socket.id} left room job_${jobId}`);
+  });
+
+  socket.on("disconnect", () => {
+    console.log(`Socket disconnected: ${socket.id}`);
+  });
+});
 
 app.use(helmet());
 app.use(cors());
@@ -55,4 +83,4 @@ app.use("/admin", adminRouter);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`Idle API listening on :${PORT}`));
+server.listen(PORT, () => console.log(`Idle API listening on :${PORT}`));

@@ -28,6 +28,7 @@ const updateSchema = z.object({
   longitude: z.number().optional(),
   city: z.string().optional(),
   country: z.string().optional(),
+  pushToken: z.string().nullable().optional(),
 });
 
 userRouter.patch(
@@ -37,6 +38,23 @@ userRouter.patch(
     const data = updateSchema.parse(req.body);
     const user = await prisma.user.update({ where: { id: req.auth!.userId }, data });
     res.json(sanitizeUser(user));
+  })
+);
+
+const pushTokenSchema = z.object({
+  pushToken: z.string().min(1),
+});
+
+userRouter.post(
+  "/me/push-token",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { pushToken } = pushTokenSchema.parse(req.body);
+    await prisma.user.update({
+      where: { id: req.auth!.userId },
+      data: { pushToken },
+    });
+    res.json({ ok: true, message: "Push token updated" });
   })
 );
 

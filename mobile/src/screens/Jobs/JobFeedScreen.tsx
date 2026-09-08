@@ -24,21 +24,30 @@ export default function JobFeedScreen({ navigation }: any) {
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [searchText, setSearchText] = useState("");
 
+  const buildQueryString = (params: Record<string, string | undefined>) => {
+    return Object.entries(params)
+      .filter(([_, value]) => value !== undefined && value !== "" && value !== "All")
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value!)}`)
+      .join("&");
+  };
+
   const loadJobs = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (filters.category && filters.category !== "All") params.set("category", filters.category);
-      if (filters.minPay) params.set("minPay", filters.minPay);
-      if (filters.maxPay) params.set("maxPay", filters.maxPay);
-      if (filters.payType) params.set("payType", filters.payType);
-      if (filters.minWorkers) params.set("minWorkers", filters.minWorkers);
-      if (searchText) params.set("q", searchText);
+      const queryString = buildQueryString({
+        category: filters.category,
+        minPay: filters.minPay,
+        maxPay: filters.maxPay,
+        payType: filters.payType,
+        minWorkers: filters.minWorkers,
+        q: searchText,
+      });
 
-      const res = await api<{ jobs: Job[] }>(`/jobs/search?${params.toString()}`);
-      setJobs(res.jobs);
+      const endpoint = queryString ? `/jobs/search?${queryString}` : "/jobs/search";
+      const res = await api<{ jobs: Job[] }>(endpoint);
+      setJobs(res.jobs || []);
     } catch (e) {
-      console.error(e);
+      console.error("Failed to load jobs:", e);
     } finally {
       setLoading(false);
     }
@@ -51,7 +60,9 @@ export default function JobFeedScreen({ navigation }: any) {
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       <View style={{ padding: spacing.md, paddingTop: spacing.xl }}>
-        <Text style={[typography.h1, { color: theme.textPrimary, marginBottom: spacing.md }]}>Jobs near you</Text>
+        <Text style={[typography.h1, { color: theme.textPrimary, marginBottom: spacing.md }]}>
+          Jobs near you
+        </Text>
 
         <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <View
@@ -72,6 +83,7 @@ export default function JobFeedScreen({ navigation }: any) {
               value={searchText}
               onChangeText={setSearchText}
               onSubmitEditing={loadJobs}
+              returnKeyType="search"
               style={{ flex: 1, paddingVertical: 12, color: theme.textPrimary }}
             />
           </View>
@@ -104,7 +116,15 @@ export default function JobFeedScreen({ navigation }: any) {
                   marginRight: spacing.sm,
                 }}
               >
-                <Text style={{ color: active ? theme.textInverse : theme.chipText, fontWeight: "600", fontSize: 13 }}>{cat}</Text>
+                <Text
+                  style={{
+                    color: active ? theme.textInverse : theme.chipText,
+                    fontWeight: "600",
+                    fontSize: 13,
+                  }}
+                >
+                  {cat}
+                </Text>
               </TouchableOpacity>
             );
           })}
@@ -117,8 +137,14 @@ export default function JobFeedScreen({ navigation }: any) {
         contentContainerStyle={{ padding: spacing.md, paddingTop: 0 }}
         refreshing={loading}
         onRefresh={loadJobs}
-        ListEmptyComponent={!loading ? <EmptyState message="No jobs match your search yet. Try widening your filters, or be the first to post one!" /> : null}
-        renderItem={({ item }) => <JobCard job={item} onPress={() => navigation.navigate("JobDetail", { jobId: item.id })} />}
+        ListEmptyComponent={
+          !loading ? (
+            <EmptyState message="No jobs match your search yet. Try widening your filters, or be the first to post one!" />
+          ) : null
+        }
+        renderItem={({ item }) => (
+          <JobCard job={item} onPress={() => navigation.navigate("JobDetail", { jobId: item.id })} />
+        )}
       />
 
       <TouchableOpacity
@@ -185,7 +211,9 @@ function JobCard({ job, onPress }: { job: Job; onPress: () => void }) {
           {job.durationEstimate && <Badge label={job.durationEstimate} />}
           {job.workersNeeded > 1 && <Badge label={`${job.workersNeeded} workers needed`} />}
           {job.requiresIdVerification && <Badge label="ID verification required" tone="warning" />}
-          {typeof job.distanceKm === "number" && <Badge label={`${job.distanceKm.toFixed(1)} km away`} tone="neutral" />}
+          {typeof job.distanceKm === "number" && (
+            <Badge label={`${job.distanceKm.toFixed(1)} km away`} tone="neutral" />
+          )}
           {job._count && <Badge label={`${job._count.bids} bid${job._count.bids === 1 ? "" : "s"}`} tone="neutral" />}
         </View>
       </Card>
@@ -207,15 +235,28 @@ function FilterModal({
   const { theme } = useTheme();
   const [local, setLocal] = useState<Filters>(filters);
 
-  useEffect(() => setLocal(filters), [visible]);
+  useEffect(() => {
+    if (visible) setLocal(filters);
+  }, [visible, filters]);
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.4)" }}>
-        <View style={{ backgroundColor: theme.surface, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, padding: spacing.lg }}>
-          <Text style={[typography.h2, { color: theme.textPrimary, marginBottom: spacing.md }]}>Filter jobs</Text>
+        <View
+          style={{
+            backgroundColor: theme.surface,
+            borderTopLeftRadius: radius.lg,
+            borderTopRightRadius: radius.lg,
+            padding: spacing.lg,
+          }}
+        >
+          <Text style={[typography.h2, { color: theme.textPrimary, marginBottom: spacing.md }]}>
+            Filter jobs
+          </Text>
 
-          <Text style={[typography.bodyBold, { color: theme.textPrimary, marginBottom: spacing.xs }]}>Pay type</Text>
+          <Text style={[typography.bodyBold, { color: theme.textPrimary, marginBottom: spacing.xs }]}>
+            Pay type
+          </Text>
           <View style={{ flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md }}>
             {(["fixed", "hourly"] as const).map((pt) => (
               <TouchableOpacity
@@ -235,7 +276,9 @@ function FilterModal({
             ))}
           </View>
 
-          <Text style={[typography.bodyBold, { color: theme.textPrimary, marginBottom: spacing.xs }]}>Pay range</Text>
+          <Text style={[typography.bodyBold, { color: theme.textPrimary, marginBottom: spacing.xs }]}>
+            Pay range
+          </Text>
           <View style={{ flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md }}>
             <TextInput
               placeholder="Min"
@@ -243,7 +286,15 @@ function FilterModal({
               keyboardType="numeric"
               value={local.minPay || ""}
               onChangeText={(t) => setLocal((f) => ({ ...f, minPay: t }))}
-              style={{ flex: 1, backgroundColor: theme.surfaceAlt, borderRadius: radius.md, padding: 12, color: theme.textPrimary, borderWidth: 1, borderColor: theme.border }}
+              style={{
+                flex: 1,
+                backgroundColor: theme.surfaceAlt,
+                borderRadius: radius.md,
+                padding: 12,
+                color: theme.textPrimary,
+                borderWidth: 1,
+                borderColor: theme.border,
+              }}
             />
             <TextInput
               placeholder="Max"
@@ -251,18 +302,36 @@ function FilterModal({
               keyboardType="numeric"
               value={local.maxPay || ""}
               onChangeText={(t) => setLocal((f) => ({ ...f, maxPay: t }))}
-              style={{ flex: 1, backgroundColor: theme.surfaceAlt, borderRadius: radius.md, padding: 12, color: theme.textPrimary, borderWidth: 1, borderColor: theme.border }}
+              style={{
+                flex: 1,
+                backgroundColor: theme.surfaceAlt,
+                borderRadius: radius.md,
+                padding: 12,
+                color: theme.textPrimary,
+                borderWidth: 1,
+                borderColor: theme.border,
+              }}
             />
           </View>
 
-          <Text style={[typography.bodyBold, { color: theme.textPrimary, marginBottom: spacing.xs }]}>Minimum workers needed</Text>
+          <Text style={[typography.bodyBold, { color: theme.textPrimary, marginBottom: spacing.xs }]}>
+            Minimum workers needed
+          </Text>
           <TextInput
             placeholder="e.g. 2"
             placeholderTextColor={theme.textSecondary}
             keyboardType="numeric"
             value={local.minWorkers || ""}
             onChangeText={(t) => setLocal((f) => ({ ...f, minWorkers: t }))}
-            style={{ backgroundColor: theme.surfaceAlt, borderRadius: radius.md, padding: 12, color: theme.textPrimary, borderWidth: 1, borderColor: theme.border, marginBottom: spacing.lg }}
+            style={{
+              backgroundColor: theme.surfaceAlt,
+              borderRadius: radius.md,
+              padding: 12,
+              color: theme.textPrimary,
+              borderWidth: 1,
+              borderColor: theme.border,
+              marginBottom: spacing.lg,
+            }}
           />
 
           <Button title="Apply filters" onPress={() => onApply(local)} />

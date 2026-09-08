@@ -89,12 +89,6 @@ export async function apiUpload<T = any>(path: string, formData: FormData): Prom
 // "Unsupported FormDataPart implementation" instead. A real Blob is always
 // accepted, so this converts a local picker/camera uri into one; use it
 // everywhere a photo gets appended to a FormData before uploading.
-//
-// Local file:// fetches (especially on Android) don't always come back with
-// a usable Content-Type, so the resulting Blob's `.type` can be empty or
-// "application/octet-stream" — the backend's image-type check then rejects
-// it as "not an allowed image type" even though it's a perfectly good photo.
-// Force a sane type whenever the blob didn't get one.
 export async function uriToBlob(uri: string, fallbackMimeType = "image/jpeg"): Promise<Blob> {
   const response = await fetch(uri);
   const blob = await response.blob();
@@ -102,6 +96,35 @@ export async function uriToBlob(uri: string, fallbackMimeType = "image/jpeg"): P
     return new Blob([blob], { type: fallbackMimeType });
   }
   return blob;
+}
+
+// Helper to register the device Expo Push Token with the backend
+export async function registerPushToken(pushToken: string): Promise<{ ok: boolean }> {
+  return api<{ ok: boolean }>("/users/me/push-token", {
+    method: "POST",
+    body: { pushToken },
+  });
+}
+
+// Helper to fetch paginated job feed results
+export interface PaginatedJobsResponse {
+  jobs: any[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export async function getJobsFeed(params: Record<string, any> = {}): Promise<PaginatedJobsResponse> {
+  const searchParams = new URLSearchParams();
+  Object.entries(params).forEach(([key, val]) => {
+    if (val !== undefined && val !== null && val !== "") {
+      searchParams.append(key, String(val));
+    }
+  });
+
+  const queryString = searchParams.toString();
+  return api<PaginatedJobsResponse>(`/jobs/search${queryString ? `?${queryString}` : ""}`);
 }
 
 export { API_URL };

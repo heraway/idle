@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, FlatList, TextInput, TouchableOpacity, Image, KeyboardAvoidingView, Platform } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import { io, Socket } from "socket.io-client";
 import { useTheme } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
-import { api, apiUpload, uriToBlob } from "../../api/client";
+import { api, apiUpload, uriToBlob, API_URL } from "../../api/client";
 import { Message } from "../../types";
 import { spacing, typography, radius } from "../../theme/theme";
 
@@ -13,7 +14,8 @@ export default function ChatScreen({ route }: any) {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
-  const listRef = useRef<FlatList>(null);
+  const listRef = useRef<FlatList<Message>>(null);
+  const socketRef = useRef<Socket | null>(null);
 
   const load = useCallback(async () => {
     const data = await api<Message[]>(`/messages/job/${jobId}`);
@@ -22,17 +24,35 @@ export default function ChatScreen({ route }: any) {
 
   useEffect(() => {
     load();
-    // Simple polling — swap for a socket.io subscription for true real-time.
-    const interval = setInterval(load, 4000);
-    return () => clearInterval(interval);
-  }, [load]);
+
+    const socket = io(API_URL, {
+      transports: ["websocket"],
+    });
+
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      socket.emit("joinJobChat", jobId);
+    });
+
+    socket.on("newMessage", (msg: Message) => {
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === msg.id)) return prev;
+        return [...prev, msg];
+      });
+    });
+
+    return () => {
+      socket.emit("leaveJobChat", jobId);
+      socket.disconnect();
+    };
+  }, [jobId, load]);
 
   const send = async () => {
     if (!text.trim()) return;
     const body = text;
     setText("");
     await api("/messages", { method: "POST", body: { jobId, body } });
-    load();
   };
 
   const sendPhoto = async () => {
@@ -46,26 +66,40 @@ export default function ChatScreen({ route }: any) {
     const blob = await uriToBlob(result.assets[0].uri);
     form.append("photo", blob, "photo.jpg");
     await apiUpload("/messages/with-photo", form);
-    load();
   };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: theme.background }} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={90}>
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: theme.background }}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={90}
+    >
       <Text style={[typography.h3, { color: theme.textPrimary, padding: spacing.md }]} numberOfLines={1}>
         {jobTitle}
       </Text>
       <FlatList
         ref={listRef}
         data={messages}
-        keyExtractor={(m) => m.id}
+        keyExtractor={(m: Message) => m.id}
         contentContainerStyle={{ padding: spacing.md }}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
-        renderItem={({ item }) => {
+        renderItem={({ item }: { item: Message }) => {
           const mine = item.senderId === user?.id;
           if (item.systemEvent) {
             return (
               <View style={{ alignItems: "center", marginVertical: spacing.sm }}>
-                <Text style={[typography.caption, { color: theme.textSecondary, backgroundColor: theme.surfaceAlt, paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.pill }]}>
+                <Text
+                  style={[
+                    typography.caption,
+                    {
+                      color: theme.textSecondary,
+                      backgroundColor: theme.surfaceAlt,
+                      paddingHorizontal: spacing.sm,
+                      paddingVertical: 4,
+                      borderRadius: radius.pill,
+                    },
+                  ]}
+                >
                   {item.body}
                 </Text>
               </View>
@@ -82,7 +116,10 @@ export default function ChatScreen({ route }: any) {
                 }}
               >
                 {item.imageUrl && (
-                  <Image source={{ uri: item.imageUrl }} style={{ width: 200, height: 150, borderRadius: radius.sm, marginBottom: item.body ? spacing.xs : 0 }} />
+                  <Image
+                    source={{ uri: item.imageUrl }}
+                    style={{ width: 200, height: 150, borderRadius: radius.sm, marginBottom: item.body ? spacing.xs : 0 }}
+                  />
                 )}
                 {item.body ? <Text style={{ color: mine ? theme.textInverse : theme.textPrimary }}>{item.body}</Text> : null}
               </View>
@@ -99,10 +136,20 @@ export default function ChatScreen({ route }: any) {
           onChangeText={setText}
           placeholder="Message..."
           placeholderTextColor={theme.textSecondary}
-          style={{ flex: 1, backgroundColor: theme.surfaceAlt, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 10, color: theme.textPrimary }}
+          style={{
+            flex: 1,
+            backgroundColor: theme.surfaceAlt,
+            borderRadius: radius.pill,
+            paddingHorizontal: spacing.md,
+            paddingVertical: 10,
+            color: theme.textPrimary,
+          }}
           onSubmitEditing={send}
         />
-        <TouchableOpacity onPress={send} style={{ backgroundColor: theme.primary, borderRadius: radius.pill, paddingVertical: 10, paddingHorizontal: spacing.md }}>
+        <TouchableOpacity
+          onPress={send}
+          style={{ backgroundColor: theme.primary, borderRadius: radius.pill, paddingVertical: 10, paddingHorizontal: spacing.md }}
+        >
           <Text style={{ color: theme.textInverse, fontWeight: "700" }}>Send</Text>
         </TouchableOpacity>
       </View>

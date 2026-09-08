@@ -109,13 +109,7 @@ function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
 // shown to the hirer, the assigned worker, and admins. Everyone else
 // (people browsing the feed, or who bid but weren't chosen) sees the
 // location rounded to ~1.1km precision and no street address — enough to
-// judge distance/neighborhood without pinpointing a home. Full precision
-// reappears automatically once a worker is assigned, since they need it to
-// actually show up. Note this only closes the "browsing/rejected bidder"
-// exposure — it can't retroactively hide an address from a worker who
-// physically visited; that's a real-world limit no API-side masking fixes,
-// which is why report.routes.ts + admin escalation exist as the backstop
-// for a completed job that ends up unsafe.
+// judge distance/neighborhood without pinpointing a home.
 // ------------------------------------------------------------
 function maskJobLocation<T extends { hirerId: string; assignments?: { workerId: string }[]; latitude: number; longitude: number; address?: string | null }>(
   job: T,
@@ -132,6 +126,7 @@ function maskJobLocation<T extends { hirerId: string; assignments?: { workerId: 
     address: null,
   };
 }
+
 jobRouter.get(
   "/search",
   optionalAuth,
@@ -157,6 +152,8 @@ jobRouter.get(
       ];
     }
 
+    const totalCount = await prisma.job.count({ where });
+
     let jobs = await prisma.job.findMany({
       where,
       include: { hirer: { select: { id: true, firstName: true, lastName: true, avgRating: true, avatarUrl: true } }, assignments: { select: { workerId: true } }, _count: { select: { bids: true } } },
@@ -178,7 +175,13 @@ jobRouter.get(
 
     const maskedJobs = jobs.map((j: (typeof jobs)[number]) => maskJobLocation(j, req.auth ? { userId: req.auth.userId, role: req.auth.role } : undefined));
 
-    res.json({ jobs: maskedJobs, page: q.page, pageSize: q.pageSize });
+    res.json({
+      jobs: maskedJobs,
+      total: totalCount,
+      page: q.page,
+      pageSize: q.pageSize,
+      totalPages: Math.ceil(totalCount / q.pageSize),
+    });
   })
 );
 
@@ -204,7 +207,9 @@ jobRouter.get(
       },
     });
     if (!job) throw new ApiError(404, "Job not found");
-    if (job.status === "OPEN" && job.expiresAt <= new Date()) {
+
+    const expiresAt = (job as { expiresAt?: Date | null }).expiresAt;
+    if (job.status === "OPEN" && expiresAt && new Date(expiresAt) <= new Date()) {
       const expired = await prisma.job.update({ where: { id: job.id }, data: { status: "CANCELLED" } });
       return res.json(maskJobLocation(expired, req.auth ? { userId: req.auth.userId, role: req.auth.role } : undefined));
     }
@@ -254,10 +259,7 @@ jobRouter.post(
 );
 
 // ------------------------------------------------------------
-// PREVIEW PHOTOS — optional photos of the work site, attached by the hirer
-// at posting time so bidders know what they're actually walking into
-// before they commit to a price. Up to 5 total; upload can happen right
-// after job creation, or added later while the job is still OPEN.
+// PREVIEW PHOTOS — optional photos of the work site
 // ------------------------------------------------------------
 const MAX_PREVIEW_PHOTOS = 5;
 
@@ -307,7 +309,7 @@ jobRouter.delete(
 );
 
 // ------------------------------------------------------------
-// CANCEL (by hirer, before assignment) — admin cancel lives in admin.routes.ts
+// CANCEL (by hirer, before assignment)
 // ------------------------------------------------------------
 jobRouter.post(
   "/:id/cancel",

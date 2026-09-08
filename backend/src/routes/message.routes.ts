@@ -5,6 +5,7 @@ import { requireAuth } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/ApiError";
 import { upload, publicUrlFor } from "../services/upload.service";
+import { io } from "../index";
 
 export const messageRouter = Router();
 
@@ -41,7 +42,12 @@ messageRouter.post(
     await assertParticipant(data.jobId, req.auth!.userId);
     const message = await prisma.message.create({
       data: { jobId: data.jobId, senderId: req.auth!.userId, body: data.body },
+      include: { sender: { select: { id: true, firstName: true, avatarUrl: true } } },
     });
+
+    // Broadcast message via Socket.IO to room members
+    io.to(`job_${data.jobId}`).emit("newMessage", message);
+
     res.status(201).json(message);
   })
 );
@@ -61,7 +67,12 @@ messageRouter.post(
         body: req.body.body || null,
         imageUrl: publicUrlFor(req.file.filename, req),
       },
+      include: { sender: { select: { id: true, firstName: true, avatarUrl: true } } },
     });
+
+    // Broadcast message with image attachment via Socket.IO to room members
+    io.to(`job_${jobId}`).emit("newMessage", message);
+
     res.status(201).json(message);
   })
 );

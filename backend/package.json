@@ -1,7 +1,7 @@
 {
   "name": "idle-backend",
   "version": "1.0.0",
-  "description": "Idle \u2014 hyper-local gig marketplace API",
+  "description": "Idle — hyper-local gig marketplace API",
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
@@ -17,6 +17,7 @@
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
+    "expo-server-sdk": "^7.2.0",
     "express": "^4.19.2",
     "express-rate-limit": "^7.4.0",
     "helmet": "^7.1.0",
