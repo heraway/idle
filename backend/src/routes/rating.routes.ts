@@ -4,6 +4,7 @@ import { prisma } from "../config/prisma";
 import { requireAuth } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/ApiError";
+import { assertClean } from "../utils/profanityFilter";
 
 export const ratingRouter = Router();
 
@@ -23,6 +24,7 @@ ratingRouter.post(
   requireAuth,
   asyncHandler(async (req, res) => {
     const data = rateSchema.parse(req.body);
+    assertClean(data.comment, "comment");
     const job = await prisma.job.findUnique({ where: { id: data.jobId }, include: { assignments: true } });
     if (!job) throw new ApiError(404, "Job not found");
     if (job.status !== "COMPLETED") throw new ApiError(400, "You can only rate after the job is completed");

@@ -5,32 +5,40 @@ import { requireAuth, optionalAuth } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/ApiError";
 import { upload, publicUrlFor } from "../services/upload.service";
+import { assertClean } from "../utils/profanityFilter";
+import { refundEscrow } from "../services/escrow.service";
+import { notifyJobCancelled } from "../services/notification.service";
 
 export const jobRouter = Router();
 
 // ------------------------------------------------------------
 // CREATE
 // ------------------------------------------------------------
-const createJobSchema = z.object({
-  title: z.string().min(3).max(120),
-  description: z.string().min(10).max(3000),
-  category: z.string().min(2),
-  requiresLicense: z.string().optional(),
-  requiresIdVerification: z.boolean().optional().default(false),
-  latitude: z.number(),
-  longitude: z.number(),
-  address: z.string().optional(),
-  city: z.string().optional(),
-  country: z.string().optional(),
-  payType: z.enum(["fixed", "hourly"]),
-  budgetMin: z.number().nonnegative().optional(),
-  budgetMax: z.number().nonnegative().optional(),
-  currency: z.string().default("USD"),
-  durationEstimate: z.string().optional(),
-  workersNeeded: z.number().int().min(1).max(50).default(1),
-  hoursPerDayNeeded: z.number().int().min(1).max(24).optional(),
-  checklist: z.array(z.string().min(1)).optional(), // initial task list, ticked off during the job
-});
+const createJobSchema = z
+  .object({
+    title: z.string().min(3).max(120),
+    description: z.string().min(10).max(3000),
+    category: z.string().min(2),
+    requiresLicense: z.string().optional(),
+    requiresIdVerification: z.boolean().optional().default(false),
+    latitude: z.number(),
+    longitude: z.number(),
+    address: z.string().optional(),
+    city: z.string().optional(),
+    country: z.string().optional(),
+    payType: z.enum(["fixed", "hourly"]),
+    budgetMin: z.number().positive("Enter a pay amount greater than 0"),
+    budgetMax: z.number().positive().optional(),
+    currency: z.string().default("USD"),
+    durationEstimate: z.string().optional(),
+    workersNeeded: z.number().int().min(1).max(50).default(1),
+    hoursPerDayNeeded: z.number().int().min(1).max(24).optional(),
+    checklist: z.array(z.string().min(1)).optional(), // initial task list, ticked off during the job
+  })
+  .refine((data) => data.budgetMax === undefined || data.budgetMax >= data.budgetMin, {
+    message: "Budget max must be greater than or equal to budget min",
+    path: ["budgetMax"],
+  });
 
 const DEFAULT_JOB_LIFETIME_DAYS = 30;
 
@@ -39,6 +47,8 @@ jobRouter.post(
   requireAuth,
   asyncHandler(async (req, res) => {
     const data = createJobSchema.parse(req.body);
+    assertClean(data.title, "job title");
+    assertClean(data.description, "job description");
 
     const job = await prisma.job.create({
       data: {
@@ -315,12 +325,34 @@ jobRouter.post(
   "/:id/cancel",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const job = await prisma.job.findUnique({ where: { id: req.params.id } });
+    const job = await prisma.job.findUnique({
+      where: { id: req.params.id },
+      include: { escrow: true, assignments: { include: { worker: { select: { id: true } } } } },
+    });
     if (!job) throw new ApiError(404, "Job not found");
     if (job.hirerId !== req.auth!.userId) throw new ApiError(403, "Only the hirer can cancel this job");
     if (!["OPEN", "ASSIGNED"].includes(job.status)) throw new ApiError(400, `Cannot cancel a job in status ${job.status}`);
 
-    const updated = await prisma.job.update({ where: { id: job.id }, data: { status: "CANCELLED" } });
+    const updated = await prisma.$transaction(async (tx) => {
+      const cancelled = await tx.job.update({ where: { id: job.id }, data: { status: "CANCELLED" } });
+      // Any bids still waiting on a decision are now moot — close them out
+      // rather than leaving them PENDING forever.
+      await tx.bid.updateMany({ where: { jobId: job.id, status: "PENDING" }, data: { status: "REJECTED" } });
+      return cancelled;
+    });
+
+    // Escrow is only ever funded once a job reaches ASSIGNED (see
+    // escrow.routes.ts), but a hirer can still cancel from ASSIGNED before
+    // work starts — refund it the same way the admin force-cancel path
+    // already does, so money never gets stuck in FUNDED with no job left.
+    if (job.escrow && (job.escrow.status === "FUNDED" || job.escrow.status === "DISPUTED_HOLD")) {
+      await refundEscrow(job.id);
+    }
+
+    // Let anyone already assigned know — they may have already started
+    // planning around this job.
+    await Promise.all(job.assignments.map((a) => notifyJobCancelled(a.worker.id, job.title)));
+
     res.json(updated);
   })
 );

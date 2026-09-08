@@ -4,10 +4,18 @@ import { StatusBar } from "expo-status-bar";
 import { ThemeProvider, useTheme } from "./src/context/ThemeContext";
 import { AuthProvider } from "./src/context/AuthContext";
 import RootNavigator from "./src/navigation/RootNavigator";
+import { useRegisterPushToken } from "./src/hooks/usePushNotifications";
 
 function StatusBarBridge() {
   const { theme } = useTheme();
   return <StatusBar style={theme.mode === "dark" ? "light" : "dark"} />;
+}
+
+// Requests notification permission and registers the Expo push token with
+// the backend once a user is logged in. Renders nothing.
+function PushNotificationsBridge() {
+  useRegisterPushToken();
+  return null;
 }
 
 // Invisible portfolio watermark: zero-size, zero-opacity, and hidden from
@@ -31,6 +39,7 @@ export default function App() {
       <AuthProvider>
         <StatusBarBridge />
         <BuildSignature />
+        <PushNotificationsBridge />
         <RootNavigator />
       </AuthProvider>
     </ThemeProvider>

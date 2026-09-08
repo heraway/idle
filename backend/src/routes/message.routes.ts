@@ -6,6 +6,7 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/ApiError";
 import { upload, publicUrlFor } from "../services/upload.service";
 import { io } from "../index";
+import { assertClean } from "../utils/profanityFilter";
 
 export const messageRouter = Router();
 
@@ -39,6 +40,7 @@ messageRouter.post(
   requireAuth,
   asyncHandler(async (req, res) => {
     const data = sendSchema.parse(req.body);
+    assertClean(data.body, "message");
     await assertParticipant(data.jobId, req.auth!.userId);
     const message = await prisma.message.create({
       data: { jobId: data.jobId, senderId: req.auth!.userId, body: data.body },
@@ -58,6 +60,7 @@ messageRouter.post(
   upload.single("photo"),
   asyncHandler(async (req, res) => {
     const jobId = req.body.jobId as string;
+    assertClean(req.body.body, "message");
     await assertParticipant(jobId, req.auth!.userId);
     if (!req.file) throw new ApiError(400, "No photo uploaded");
     const message = await prisma.message.create({

@@ -5,6 +5,7 @@ import { requireAuth, optionalAuth } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/ApiError";
 import { notifyNewQuestion, notifyQuestionAnswered } from "../services/notification.service";
+import { assertClean } from "../utils/profanityFilter";
 
 export const questionRouter = Router();
 
@@ -42,6 +43,7 @@ questionRouter.post(
   requireAuth,
   asyncHandler(async (req, res) => {
     const data = askSchema.parse(req.body);
+    assertClean(data.body, "question");
     const job = await prisma.job.findUnique({ where: { id: data.jobId } });
     if (!job) throw new ApiError(404, "Job not found");
     if (job.hirerId === req.auth!.userId) {
@@ -72,6 +74,7 @@ questionRouter.patch(
   requireAuth,
   asyncHandler(async (req, res) => {
     const data = answerSchema.parse(req.body);
+    assertClean(data.answerBody, "answer");
     const question = await prisma.jobQuestion.findUnique({
       where: { id: req.params.id },
       include: { job: true },

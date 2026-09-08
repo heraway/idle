@@ -5,6 +5,7 @@ import { requireAuth, requireAdmin } from "../middleware/auth";
 import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/ApiError";
 import { freezeEscrowForDispute } from "../services/escrow.service";
+import { reportLimiter } from "../middleware/rateLimit";
 
 export const reportRouter = Router();
 
@@ -27,12 +28,29 @@ const reportSchema = z.object({
 reportRouter.post(
   "/",
   requireAuth,
+  reportLimiter,
   asyncHandler(async (req, res) => {
     const data = reportSchema.parse(req.body);
     if (data.targetType === "USER" && !data.targetUserId) {
       throw new ApiError(400, "targetUserId is required when reporting a user");
     }
     if (data.targetUserId === req.auth!.userId) throw new ApiError(400, "You cannot report yourself");
+
+    // Block a second report against the exact same target while an earlier
+    // one from this reporter is still unresolved — stops someone from
+    // filing the same complaint repeatedly to force it up the queue, or
+    // using volume as harassment against one person/job.
+    const existingPending = await prisma.report.findFirst({
+      where: {
+        reporterId: req.auth!.userId,
+        status: { in: ["OPEN", "REVIEWING"] },
+        ...(data.targetType === "USER" ? { targetUserId: data.targetUserId } : {}),
+        ...(data.jobId ? { jobId: data.jobId } : {}),
+      },
+    });
+    if (existingPending) {
+      throw new ApiError(400, "You already have a pending report on this — an admin hasn't reviewed it yet.");
+    }
 
     const report = await prisma.report.create({
       data: {

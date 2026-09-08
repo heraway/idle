@@ -126,6 +126,11 @@ model User {
   // how many hours/day this person is generally willing to work (as a worker)
   hoursPerDayAvailable Int?
 
+  // Expo push token for this device, so notification.service.ts can reach
+  // this user via the Expo push API. Nullable — not every account has
+  // granted notification permission or opened the app since this was added.
+  pushToken String?
+
   // Forgot-password flow — a short-lived, single-use, hashed token (never
   // store the raw token; see auth.routes.ts). Nulled out after use or expiry.
   passwordResetTokenHash String?

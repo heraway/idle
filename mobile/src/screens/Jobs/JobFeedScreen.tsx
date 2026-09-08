@@ -1,5 +1,7 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, FlatList, TouchableOpacity, TextInput, Modal, ScrollView, Image } from "react-native";
+import MapView, { Marker, Callout } from "react-native-maps";
+import * as Location from "expo-location";
 import { useTheme } from "../../context/ThemeContext";
 import { api } from "../../api/client";
 import { Job } from "../../types";
@@ -23,6 +25,32 @@ export default function JobFeedScreen({ navigation }: any) {
   const [filters, setFilters] = useState<Filters>({});
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [searchText, setSearchText] = useState("");
+  const [viewMode, setViewMode] = useState<"list" | "map">("list");
+  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const perm = await Location.requestForegroundPermissionsAsync();
+      if (perm.status !== "granted") return;
+      const loc = await Location.getCurrentPositionAsync({}).catch(() => null);
+      if (loc) setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+    })();
+  }, []);
+
+  // Jobs missing coordinates (shouldn't happen — lat/lng is required at
+  // posting time — but the map would silently drop pins for undefined ones).
+  const mappableJobs = useMemo(
+    () => jobs.filter((j) => typeof j.latitude === "number" && typeof j.longitude === "number"),
+    [jobs]
+  );
+
+  const mapInitialRegion = useMemo(() => {
+    if (userLocation) return { ...userLocation, latitudeDelta: 0.25, longitudeDelta: 0.25 };
+    if (mappableJobs.length > 0) {
+      return { latitude: mappableJobs[0].latitude, longitude: mappableJobs[0].longitude, latitudeDelta: 0.5, longitudeDelta: 0.5 };
+    }
+    return { latitude: 0, longitude: 0, latitudeDelta: 60, longitudeDelta: 60 };
+  }, [userLocation, mappableJobs]);
 
   const buildQueryString = (params: Record<string, string | undefined>) => {
     return Object.entries(params)
@@ -100,6 +128,43 @@ export default function JobFeedScreen({ navigation }: any) {
           </TouchableOpacity>
         </View>
 
+        <View
+          style={{
+            flexDirection: "row",
+            marginTop: spacing.sm,
+            backgroundColor: theme.surfaceAlt,
+            borderRadius: radius.md,
+            borderWidth: 1,
+            borderColor: theme.border,
+            padding: 3,
+            alignSelf: "flex-start",
+          }}
+        >
+          {(["list", "map"] as const).map((mode) => (
+            <TouchableOpacity
+              key={mode}
+              onPress={() => setViewMode(mode)}
+              style={{
+                paddingVertical: 6,
+                paddingHorizontal: 16,
+                borderRadius: radius.md - 2,
+                backgroundColor: viewMode === mode ? theme.primary : "transparent",
+              }}
+            >
+              <Text
+                style={{
+                  color: viewMode === mode ? theme.textInverse : theme.chipText,
+                  fontWeight: "600",
+                  fontSize: 13,
+                  textTransform: "capitalize",
+                }}
+              >
+                {mode}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         {/* Category quick-chips */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: spacing.md }}>
           {CATEGORIES.map((cat) => {
@@ -131,21 +196,50 @@ export default function JobFeedScreen({ navigation }: any) {
         </ScrollView>
       </View>
 
-      <FlatList
-        data={jobs}
-        keyExtractor={(j) => j.id}
-        contentContainerStyle={{ padding: spacing.md, paddingTop: 0 }}
-        refreshing={loading}
-        onRefresh={loadJobs}
-        ListEmptyComponent={
-          !loading ? (
+      {viewMode === "list" ? (
+        <FlatList
+          data={jobs}
+          keyExtractor={(j) => j.id}
+          contentContainerStyle={{ padding: spacing.md, paddingTop: 0 }}
+          refreshing={loading}
+          onRefresh={loadJobs}
+          ListEmptyComponent={
+            !loading ? (
+              <EmptyState message="No jobs match your search yet. Try widening your filters, or be the first to post one!" />
+            ) : null
+          }
+          renderItem={({ item }) => (
+            <JobCard job={item} onPress={() => navigation.navigate("JobDetail", { jobId: item.id })} />
+          )}
+        />
+      ) : (
+        <View style={{ flex: 1 }}>
+          {mappableJobs.length === 0 && !loading ? (
             <EmptyState message="No jobs match your search yet. Try widening your filters, or be the first to post one!" />
-          ) : null
-        }
-        renderItem={({ item }) => (
-          <JobCard job={item} onPress={() => navigation.navigate("JobDetail", { jobId: item.id })} />
-        )}
-      />
+          ) : (
+            <MapView style={{ flex: 1 }} initialRegion={mapInitialRegion} showsUserLocation showsMyLocationButton>
+              {mappableJobs.map((job) => (
+                <Marker key={job.id} coordinate={{ latitude: job.latitude, longitude: job.longitude }} pinColor={theme.primary}>
+                  <Callout onPress={() => navigation.navigate("JobDetail", { jobId: job.id })}>
+                    <View style={{ maxWidth: 220, padding: 4 }}>
+                      <Text style={{ fontWeight: "700", marginBottom: 2 }} numberOfLines={1}>
+                        {job.title}
+                      </Text>
+                      <Text style={{ color: "#555", fontSize: 12 }} numberOfLines={2}>
+                        {job.category} · {job.payType === "hourly" ? "hourly" : "fixed"}
+                        {job.budgetMin != null ? ` · ${job.currency} ${job.budgetMin}${job.budgetMax ? `–${job.budgetMax}` : ""}` : ""}
+                      </Text>
+                      <Text style={{ color: theme.primary, fontSize: 12, marginTop: 4, fontWeight: "600" }}>
+                        Tap for details →
+                      </Text>
+                    </View>
+                  </Callout>
+                </Marker>
+              ))}
+            </MapView>
+          )}
+        </View>
+      )}
 
       <TouchableOpacity
         onPress={() => navigation.navigate("PostJob")}

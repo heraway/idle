@@ -61,3 +61,7 @@ export async function notifyNewQuestion(hirerId: string, jobTitle: string) {
 export async function notifyQuestionAnswered(askerId: string, jobTitle: string) {
   await sendPush(askerId, "Your question was answered", `The poster of "${jobTitle}" replied to your question`);
 }
+
+export async function notifyJobCancelled(workerId: string, jobTitle: string) {
+  await sendPush(workerId, "Job cancelled", `"${jobTitle}" was cancelled by the poster. Any held funds have been refunded.`);
+}

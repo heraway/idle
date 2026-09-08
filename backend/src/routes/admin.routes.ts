@@ -5,6 +5,7 @@ import { requireAuth, requireAdmin, requireSuperAdmin } from "../middleware/auth
 import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/ApiError";
 import { refundEscrow } from "../services/escrow.service";
+import { notifyJobCancelled } from "../services/notification.service";
 import { sanitizeUser } from "./auth.routes";
 
 export const adminRouter = Router();
@@ -134,14 +135,23 @@ adminRouter.post(
   "/jobs/:id/cancel",
   asyncHandler(async (req, res) => {
     const data = moderateSchema.parse(req.body);
-    const job = await prisma.job.findUnique({ where: { id: req.params.id }, include: { escrow: true } });
+    const job = await prisma.job.findUnique({
+      where: { id: req.params.id },
+      include: { escrow: true, assignments: { include: { worker: { select: { id: true } } } } },
+    });
     if (!job) throw new ApiError(404, "Job not found");
 
-    const updated = await prisma.job.update({ where: { id: job.id }, data: { status: "CANCELLED" } });
+    const updated = await prisma.$transaction(async (tx) => {
+      const cancelled = await tx.job.update({ where: { id: job.id }, data: { status: "CANCELLED" } });
+      await tx.bid.updateMany({ where: { jobId: job.id, status: "PENDING" }, data: { status: "REJECTED" } });
+      return cancelled;
+    });
 
     if (job.escrow && (job.escrow.status === "FUNDED" || job.escrow.status === "DISPUTED_HOLD")) {
       await refundEscrow(job.id);
     }
+
+    await Promise.all(job.assignments.map((a) => notifyJobCancelled(a.worker.id, job.title)));
 
     await prisma.adminAction.create({
       data: { adminId: req.auth!.userId, targetJobId: job.id, type: "CANCEL_JOB", reason: data.reason },

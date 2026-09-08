@@ -51,6 +51,15 @@ export default function PostJobScreen({ navigation }: any) {
   const removePhoto = (uri: string) => setPhotos((prev) => prev.filter((p) => p !== uri));
 
   const handleSubmit = async () => {
+    if (!budgetMin || Number(budgetMin) <= 0) {
+      Alert.alert("Pay amount needed", "Please enter a budget for this job before posting.");
+      return;
+    }
+    if (budgetMax && Number(budgetMax) < Number(budgetMin)) {
+      Alert.alert("Check your budget", "Budget max can't be less than budget min.");
+      return;
+    }
+
     setSubmitting(true);
     try {
       const loc = await Location.getCurrentPositionAsync({}).catch(() => null);
@@ -63,7 +72,7 @@ export default function PostJobScreen({ navigation }: any) {
           description,
           category,
           payType,
-          budgetMin: budgetMin ? Number(budgetMin) : undefined,
+          budgetMin: Number(budgetMin),
           budgetMax: budgetMax ? Number(budgetMax) : undefined,
           durationEstimate: durationEstimate || undefined,
           workersNeeded: Number(workersNeeded) || 1,
@@ -194,7 +203,7 @@ export default function PostJobScreen({ navigation }: any) {
 
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <View style={{ flex: 1 }}>
-          <Input label="Budget min ($)" value={budgetMin} onChangeText={setBudgetMin} keyboardType="numeric" placeholder="20" />
+          <Input label="Budget min ($) *" value={budgetMin} onChangeText={setBudgetMin} keyboardType="numeric" placeholder="20" />
         </View>
         <View style={{ flex: 1 }}>
           <Input label="Budget max ($)" value={budgetMax} onChangeText={setBudgetMax} keyboardType="numeric" placeholder="40" />
