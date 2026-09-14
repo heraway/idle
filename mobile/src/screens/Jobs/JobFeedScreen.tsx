@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, FlatList, TouchableOpacity, TextInput, Modal, ScrollView, Image } from "react-native";
-import MapView, { Marker, Callout } from "react-native-maps";
 import * as Location from "expo-location";
 import { useTheme } from "../../context/ThemeContext";
 import { api } from "../../api/client";
 import { Job } from "../../types";
 import { Card, Badge, Button, EmptyState } from "../../components/UI";
+import JobsMap from "../../components/JobsMap";
 import { spacing, typography, radius } from "../../theme/theme";
 import { FEED_CATEGORIES as CATEGORIES } from "../../constants/categories";
 
@@ -217,26 +217,12 @@ export default function JobFeedScreen({ navigation }: any) {
           {mappableJobs.length === 0 && !loading ? (
             <EmptyState message="No jobs match your search yet. Try widening your filters, or be the first to post one!" />
           ) : (
-            <MapView style={{ flex: 1 }} initialRegion={mapInitialRegion} showsUserLocation showsMyLocationButton>
-              {mappableJobs.map((job) => (
-                <Marker key={job.id} coordinate={{ latitude: job.latitude, longitude: job.longitude }} pinColor={theme.primary}>
-                  <Callout onPress={() => navigation.navigate("JobDetail", { jobId: job.id })}>
-                    <View style={{ maxWidth: 220, padding: 4 }}>
-                      <Text style={{ fontWeight: "700", marginBottom: 2 }} numberOfLines={1}>
-                        {job.title}
-                      </Text>
-                      <Text style={{ color: "#555", fontSize: 12 }} numberOfLines={2}>
-                        {job.category} · {job.payType === "hourly" ? "hourly" : "fixed"}
-                        {job.budgetMin != null ? ` · ${job.currency} ${job.budgetMin}${job.budgetMax ? `–${job.budgetMax}` : ""}` : ""}
-                      </Text>
-                      <Text style={{ color: theme.primary, fontSize: 12, marginTop: 4, fontWeight: "600" }}>
-                        Tap for details →
-                      </Text>
-                    </View>
-                  </Callout>
-                </Marker>
-              ))}
-            </MapView>
+            <JobsMap
+              jobs={mappableJobs}
+              initialRegion={mapInitialRegion}
+              primaryColor={theme.primary}
+              onPressJob={(jobId) => navigation.navigate("JobDetail", { jobId })}
+            />
           )}
         </View>
       )}
