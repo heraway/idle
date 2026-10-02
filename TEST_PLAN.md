@@ -1,6 +1,7 @@
 # Idle — Manual Test Plan (Round 1)
 
 Accounts: `test1@idle.test`, `test2@idle.test`, `test3@idle.test`, all password `TestPass123`.
+
 Plus your own SUPERADMIN account for admin checks later.
 
 Run these on a physical device with the backend + Metro running. Tick each

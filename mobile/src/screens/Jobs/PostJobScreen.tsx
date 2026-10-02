@@ -14,7 +14,7 @@ export default function PostJobScreen({ navigation }: any) {
   const { theme } = useTheme();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory] = useState(CATEGORIES[0]);
+  const [category, setCategory] = useState<(typeof CATEGORIES)[number]>(CATEGORIES[0]);
   const [payType, setPayType] = useState<"fixed" | "hourly">("fixed");
   const [budgetMin, setBudgetMin] = useState("");
   const [budgetMax, setBudgetMax] = useState("");
@@ -39,7 +39,7 @@ export default function PostJobScreen({ navigation }: any) {
     const result = await ImagePicker.launchImageLibraryAsync({
       // ImagePicker.MediaTypeOptions is deprecated as of newer expo-image-picker
       // versions — this is the replacement syntax (array of MediaType strings).
-      mediaTypes: ["images"],
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsMultipleSelection: true,
       selectionLimit: remaining,
       quality: 0.7,

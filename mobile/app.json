@@ -5,10 +5,30 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "splash": { "backgroundColor": "#0F172A" },
-    "assetBundlePatterns": ["**/*"],
-    "ios": { "supportsTablet": true, "bundleIdentifier": "com.idle.app" },
-    "android": { "package": "com.idle.app" },
-    "extra": { "apiUrl": "http://localhost:4000" }
+    "splash": {
+      "backgroundColor": "#0F172A"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.idle.app"
+    },
+    "android": {
+      "package": "com.idle.app"
+    },
+    "extra": {
+      "apiUrl": "https://idle-backend-e95m.onrender.com",
+      "eas": {
+        "projectId": "90247bb0-2f3b-4b64-9822-a2b39750c2b6"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/90247bb0-2f3b-4b64-9822-a2b39750c2b6"
+    }
   }
 }
