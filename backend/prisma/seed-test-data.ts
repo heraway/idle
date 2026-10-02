@@ -121,7 +121,7 @@ async function upsertTestUser(handle: string) {
   const passwordHash = await hashPassword(TEST_PASSWORD);
   return prisma.user.upsert({
     where: { email },
-    update: {},
+    update: { passwordHash, accountStatus: "ACTIVE" },
     create: {
       email,
       passwordHash,
@@ -191,3 +191,4 @@ main()
     process.exit(1);
   })
   .finally(() => prisma.$disconnect());
+
