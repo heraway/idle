@@ -23,6 +23,6 @@ export const authLimiter = rateLimit({
 export const reportLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 10,
-  keyGenerator: (req) => req.auth?.userId || req.ip,
+  keyGenerator: (req) => req.auth?.userId || req.ip || "unknown",
   message: { error: "You've filed a lot of reports recently. Please try again later." },
 });

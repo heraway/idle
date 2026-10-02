@@ -177,6 +177,7 @@ async function main() {
         longitude: 28.3228 + (Math.random() - 0.5) * 0.05,
         city: "Lusaka",
         country: "Zambia",
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       },
     });
     created++;

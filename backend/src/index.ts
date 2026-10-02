@@ -22,6 +22,7 @@ import { verificationRouter } from "./routes/verification.routes";
 import { adminRouter } from "./routes/admin.routes";
 
 const app = express();
+app.set("trust proxy", 1);
 const server = http.createServer(app);
 
 export const io = new Server(server, {
