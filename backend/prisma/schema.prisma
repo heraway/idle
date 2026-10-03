@@ -95,6 +95,8 @@ model User {
   firstName     String
   lastName      String
   bio           String?
+  // optional links shown on the public profile: { website, instagram, facebook, linkedin, tiktok, x }
+  socialLinks   Json?
   avatarUrl     String?
   role          Role          @default(USER)
   accountStatus AccountStatus @default(ACTIVE)
@@ -319,6 +321,8 @@ model Rating {
   stars   Int // 1-5
   liked   Boolean @default(false)
   comment String?
+  // optional longer written reference, shown in the recipient's "References" section
+  reference String?
 
   createdAt DateTime @default(now())
 

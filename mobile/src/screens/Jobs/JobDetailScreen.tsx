@@ -16,7 +16,8 @@ import { useAuth } from "../../context/AuthContext";
 import { api, apiUpload, API_URL } from "../../api/client";
 import { appendImage } from "../../utils/media";
 import { Job, Bid } from "../../types";
-import { Card, Badge, Button, EmptyState } from "../../components/UI";
+import { Card, Badge, Button, EmptyState, Avatar } from "../../components/UI";
+import ReviewPrompt from "../../components/ReviewPrompt";
 import { Ionicons } from "@expo/vector-icons";
 import { spacing, typography, radius } from "../../theme/theme";
 
@@ -341,10 +342,20 @@ export default function JobDetailScreen({ route, navigation }: any) {
         >
           Posted by
         </Text>
-        <Text style={[typography.body, { color: theme.textSecondary }]}>
-          {job.hirer?.firstName} {job.hirer?.lastName} · ⭐{" "}
-          {job.hirer?.avgRating ?? "—"}
-        </Text>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => navigation.navigate("UserProfile", { userId: job.hirerId })}
+          accessibilityLabel="View poster profile"
+          style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}
+        >
+          <Avatar name={`${job.hirer?.firstName ?? ""} ${job.hirer?.lastName ?? ""}`} uri={job.hirer?.avatarUrl} size={44} />
+          <Text style={[typography.body, { color: theme.textSecondary, flex: 1 }]}>
+            {job.hirer?.firstName} {job.hirer?.lastName} · ⭐ {job.hirer?.avgRating ?? "—"}
+            {" · "}
+            <Text style={{ color: theme.primary, fontWeight: "700" }}>View profile</Text>
+          </Text>
+          <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+        </TouchableOpacity>
       </Card>
 
       {/* Q&A */}
@@ -639,26 +650,38 @@ export default function JobDetailScreen({ route, navigation }: any) {
                 key={bid.id}
                 style={[styles.borderTop, { borderTopColor: theme.border }]}
               >
-                <Text
-                  style={[typography.bodyBold, { color: theme.textPrimary }]}
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => navigation.navigate("UserProfile", { userId: bid.bidderId })}
+                  accessibilityLabel="View applicant profile"
+                  style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.sm }}
                 >
-                  {bid.bidder?.firstName} {bid.bidder?.lastName} — {job.currency}{" "}
-                  {bid.amount}
-                </Text>
-                <Text
-                  style={{
-                    color: theme.textSecondary,
-                    marginBottom: spacing.sm,
-                  }}
-                >
-                  ⭐ {bid.bidder?.avgRating ?? "—"}{" "}
-                  {bid.message ? `· "${bid.message}"` : ""}
-                </Text>
+                  <Avatar
+                    name={`${bid.bidder?.firstName ?? ""} ${bid.bidder?.lastName ?? ""}`}
+                    uri={bid.bidder?.avatarUrl}
+                    size={44}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[typography.bodyBold, { color: theme.textPrimary }]}>
+                      {bid.bidder?.firstName} {bid.bidder?.lastName} — {job.currency} {bid.amount}
+                    </Text>
+                    <Text style={{ color: theme.textSecondary }}>
+                      ⭐ {bid.bidder?.avgRating ?? "—"}
+                      {bid.bidder?.verificationStatus === "VERIFIED" ? " · ID verified" : ""}
+                      {" · "}
+                      <Text style={{ color: theme.primary, fontWeight: "700" }}>View profile</Text>
+                    </Text>
+                    {bid.message ? <Text style={{ color: theme.textSecondary }}>{`"${bid.message}"`}</Text> : null}
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
+                </TouchableOpacity>
                 <Button title="Accept bid" onPress={() => acceptBid(bid)} />
               </View>
             ))}
         </Card>
       )}
+
+      <ReviewPrompt job={job} navigation={navigation} />
 
       {/* Chat / messages link — available to the hirer and any accepted worker,
           even while a multi-worker job is still OPEN for more bids. */}

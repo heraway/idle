@@ -13,6 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../context/ThemeContext";
 import { radius, spacing, typography } from "../theme/theme";
+import { API_URL } from "../api/client";
 
 type IconName = React.ComponentProps<typeof Ionicons>["name"];
 
@@ -157,9 +158,39 @@ export function Chip({
 }
 
 // -------------------------------------------------------------
-// Avatar — photo, or initials on an orange-tinted disc
+// Avatar — the one avatar used across the app. Resolves relative "/uploads/…"
+// paths against the API, falls back to initials, and is tappable if onPress
+// is given.
 // -------------------------------------------------------------
+export function resolveMediaUrl(u?: string | null) {
+  if (!u) return null;
+  return /^(https?:|file:|data:|blob:)/i.test(u) ? u : `${API_URL}${u}`;
+}
+
 export function Avatar({
+  name,
+  uri,
+  size = 40,
+  onPress,
+}: {
+  name?: string;
+  uri?: string | null;
+  size?: number;
+  onPress?: () => void;
+}) {
+  const base = <AvatarBase name={name} uri={resolveMediaUrl(uri)} size={size} />;
+  if (!onPress) return base;
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.8} accessibilityLabel={name ? `${name}'s profile` : "Profile"}>
+      {base}
+    </TouchableOpacity>
+  );
+}
+
+// -------------------------------------------------------------
+// AvatarBase — photo, or initials on an orange-tinted disc
+// -------------------------------------------------------------
+function AvatarBase({
   name,
   uri,
   size = 40,

@@ -1,3 +1,12 @@
+export interface SocialLinks {
+  website?: string | null;
+  instagram?: string | null;
+  facebook?: string | null;
+  linkedin?: string | null;
+  tiktok?: string | null;
+  x?: string | null;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -5,6 +14,7 @@ export interface User {
   lastName: string;
   avatarUrl?: string | null;
   bio?: string | null;
+  socialLinks?: SocialLinks | null;
   role: "USER" | "ADMIN" | "SUPERADMIN";
   accountStatus: "ACTIVE" | "SUSPENDED" | "BANNED";
   verificationStatus: "NOT_REQUESTED" | "PENDING" | "VERIFIED" | "REJECTED";

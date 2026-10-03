@@ -14,6 +14,7 @@ const rateSchema = z.object({
   stars: z.number().int().min(1).max(5),
   liked: z.boolean().optional().default(false),
   comment: z.string().max(500).optional(),
+  reference: z.string().max(1000).optional(),
 });
 
 // Either party (hirer <-> worker) can rate the other, once the job is COMPLETED.
@@ -25,6 +26,8 @@ ratingRouter.post(
   asyncHandler(async (req, res) => {
     const data = rateSchema.parse(req.body);
     assertClean(data.comment, "comment");
+    assertClean(data.reference, "reference");
+    const reference = data.reference === undefined ? undefined : data.reference.trim() || null;
     const job = await prisma.job.findUnique({ where: { id: data.jobId }, include: { assignments: true } });
     if (!job) throw new ApiError(404, "Job not found");
     if (job.status !== "COMPLETED") throw new ApiError(400, "You can only rate after the job is completed");
@@ -40,8 +43,8 @@ ratingRouter.post(
 
     const rating = await prisma.rating.upsert({
       where: { jobId_fromUserId_toUserId: { jobId: data.jobId, fromUserId: req.auth!.userId, toUserId: data.toUserId } },
-      update: { stars: data.stars, liked: data.liked, comment: data.comment },
-      create: { jobId: data.jobId, fromUserId: req.auth!.userId, toUserId: data.toUserId, stars: data.stars, liked: data.liked, comment: data.comment },
+      update: { stars: data.stars, liked: data.liked, comment: data.comment, reference },
+      create: { jobId: data.jobId, fromUserId: req.auth!.userId, toUserId: data.toUserId, stars: data.stars, liked: data.liked, comment: data.comment, reference },
     });
 
     // Recompute the target's aggregate trust stats.
@@ -55,6 +58,20 @@ ratingRouter.post(
     });
 
     res.status(201).json(rating);
+  })
+);
+
+// Ratings the signed-in user has already left on a job (lets the app show
+// "Edit review" instead of "Leave review" and prefill the form).
+ratingRouter.get(
+  "/job/:jobId/mine",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const mine = await prisma.rating.findMany({
+      where: { jobId: req.params.jobId, fromUserId: req.auth!.userId },
+      select: { toUserId: true, stars: true, comment: true, reference: true },
+    });
+    res.json(mine);
   })
 );
 

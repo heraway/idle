@@ -5,11 +5,14 @@ import { useTheme } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
 import { Card, Badge, Button, Avatar, ListRow } from "../../components/UI";
 import { API_URL } from "../../api/client";
+import SocialLinksRow from "../../components/SocialLinks";
+import AvatarPicker from "../../components/AvatarPicker";
+import ProfileSections from "../../components/ProfileSections";
 import { spacing, typography, radius } from "../../theme/theme";
 
 export default function ProfileScreen({ navigation }: any) {
   const { theme } = useTheme();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
 
   if (!user) return null;
 
@@ -52,7 +55,7 @@ export default function ProfileScreen({ navigation }: any) {
 
       <Card>
         <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
-          <Avatar name={`${user.firstName} ${user.lastName}`} uri={avatar} size={64} />
+          <AvatarPicker name={`${user.firstName} ${user.lastName}`} uri={avatar} size={64} />
           <View style={{ flex: 1 }}>
             <Text style={[typography.h2, { color: theme.textPrimary }]} numberOfLines={1}>
               {user.firstName} {user.lastName}
@@ -70,8 +73,20 @@ export default function ProfileScreen({ navigation }: any) {
 
         <View style={{ flexDirection: "row", marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: theme.border }}>
           <Stat icon="star" value={user.ratingCount ? user.avgRating.toFixed(1) : "—"} label={`${user.ratingCount} rating${user.ratingCount === 1 ? "" : "s"}`} />
-          <Stat icon="thumbs-up" value={String(user.likesReceived)} label="Likes" />
-          <Stat icon="time" value={user.hoursPerDayAvailable ? `${user.hoursPerDayAvailable}h` : "—"} label="Per day" />
+        </View>
+        <View style={{ marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: theme.border }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+            <Text style={[typography.label, { color: theme.textSecondary }]}>About</Text>
+            <TouchableOpacity onPress={() => navigation.navigate("EditProfile")} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit profile">
+              <Text style={{ color: theme.primary, fontWeight: "700", fontSize: 13 }}>Edit</Text>
+            </TouchableOpacity>
+          </View>
+          {user.bio ? (
+            <Text style={[typography.body, { color: theme.textPrimary }]}>{user.bio}</Text>
+          ) : (
+            <Text style={[typography.body, { color: theme.textSecondary }]}>Add a short bio so people know who you are.</Text>
+          )}
+          <SocialLinksRow links={user.socialLinks} />
         </View>
       </Card>
 
@@ -85,14 +100,13 @@ export default function ProfileScreen({ navigation }: any) {
         </Card>
       ) : null}
 
-      <Card style={{ paddingVertical: spacing.xs }}>
-        <ListRow icon="chatbubbles-outline" label="Messages" onPress={() => navigation.navigate("MainTabs", { screen: "Messages" })} />
-        <ListRow icon="settings-outline" label="Settings" onPress={() => navigation.navigate("Settings")} />
-        {user.role === "ADMIN" || user.role === "SUPERADMIN" ? (
-          <ListRow icon="construct-outline" label="Admin dashboard" onPress={() => navigation.navigate("AdminDashboard")} />
-        ) : null}
-        <ListRow icon="log-out-outline" label="Log out" tone="danger" onPress={logout} last />
-      </Card>
+      <ProfileSections userId={user.id} navigation={navigation} />
+
+      {user.role === "ADMIN" || user.role === "SUPERADMIN" ? (
+        <Card style={{ paddingVertical: spacing.xs }}>
+          <ListRow icon="construct-outline" label="Admin dashboard" onPress={() => navigation.navigate("AdminDashboard")} last />
+        </Card>
+      ) : null}
     </ScrollView>
   );
 }

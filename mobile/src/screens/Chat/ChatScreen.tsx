@@ -22,6 +22,7 @@ import { useAuth } from "../../context/AuthContext";
 import { api, apiUpload, API_URL } from "../../api/client";
 import { appendImage, imageMediaTypes } from "../../utils/media";
 import { Job, Message } from "../../types";
+import { Avatar } from "../../components/UI";
 import { spacing, typography, radius } from "../../theme/theme";
 
 const abs = (u?: string | null) => (u ? (u.startsWith("http") ? u : `${API_URL}${u}`) : undefined);
@@ -196,7 +197,17 @@ export default function ChatScreen({ route, navigation }: any) {
     const fg = mine ? "#FFFFFF" : theme.textPrimary;
 
     return (
-      <View style={{ alignItems: mine ? "flex-end" : "flex-start", marginBottom: spacing.sm }}>
+      <View style={{ flexDirection: "row", alignItems: "flex-end", justifyContent: mine ? "flex-end" : "flex-start", marginBottom: spacing.sm }}>
+        {!mine ? (
+          <View style={{ marginRight: spacing.xs }}>
+            <Avatar
+              name={item.sender?.firstName}
+              uri={item.sender?.avatarUrl}
+              size={28}
+              onPress={() => navigation.navigate("UserProfile", { userId: item.senderId })}
+            />
+          </View>
+        ) : null}
         <View
           style={{
             maxWidth: "80%",
