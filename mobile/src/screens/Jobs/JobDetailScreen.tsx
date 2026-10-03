@@ -263,6 +263,10 @@ export default function JobDetailScreen({ route, navigation }: any) {
           tone="accent"
         />
         {job.durationEstimate && <Badge label={job.durationEstimate} />}
+        <Badge
+          label={`${job.applicantCount ?? 0} applicant${(job.applicantCount ?? 0) === 1 ? "" : "s"}`}
+          icon="people-outline"
+        />
         {job.workersNeeded > 1 && (
           <Badge label={`${job.workersNeeded} workers needed`} />
         )}

@@ -8,6 +8,7 @@ import { upload, publicUrlFor } from "../services/upload.service";
 import { assertClean } from "../utils/profanityFilter";
 import { refundEscrow } from "../services/escrow.service";
 import { notifyJobCancelled } from "../services/notification.service";
+import { BidStatus } from "@prisma/client";
 
 export const jobRouter = Router();
 
@@ -92,7 +93,6 @@ const searchSchema = z.object({
   lng: z.coerce.number().optional(),
   radiusKm: z.coerce.number().optional().default(25),
   minPay: z.coerce.number().optional(),
-  maxPay: z.coerce.number().optional(),
   payType: z.enum(["fixed", "hourly"]).optional(),
   minWorkers: z.coerce.number().optional(),
   maxWorkers: z.coerce.number().optional(),
@@ -103,6 +103,7 @@ const searchSchema = z.object({
   verifiedOnly: z.enum(["true", "false", "1", "0"]).optional().transform((v) => v === "true" || v === "1"), // only jobs that require ID verification
   minRating: z.coerce.number().min(0).max(5).optional(), // hirer's average rating
   postedWithinHours: z.coerce.number().positive().optional(),
+  postedAfter: z.coerce.date().optional(), // ISO timestamp — only jobs posted at/after this moment
   endingWithinHours: z.coerce.number().positive().optional(),
   status: z.string().optional().default("OPEN"),
   page: z.coerce.number().min(1).default(1),
@@ -138,10 +139,65 @@ function maskJobLocation<T extends { hirerId: string; assignments?: { workerId: 
 
   return {
     ...job,
-    latitude: Math.round(job.latitude * 100) / 100,
-    longitude: Math.round(job.longitude * 100) / 100,
+    latitude: approxCoord(job.latitude),
+    longitude: approxCoord(job.longitude),
     address: null,
   };
+}
+
+type JobSearchQuery = z.infer<typeof searchSchema>;
+
+// ------------------------------------------------------------
+// APPLICANT COUNTS — always derived from the Bid table, never stored or
+// guessed. A withdrawn bid no longer counts; pending/accepted/rejected do.
+// Only the number is ever exposed to the public, never who applied.
+// ------------------------------------------------------------
+const APPLICANT_COUNT_SELECT = { bids: { where: { status: { not: BidStatus.WITHDRAWN } } } };
+
+function withApplicantCount<T extends { _count?: { bids: number } }>(job: T) {
+  const { _count, ...rest } = job;
+  return { ...rest, applicantCount: _count?.bids ?? 0 };
+}
+
+// ~1.1km grid. Deterministic, so the same job always lands on the same
+// approximate spot and the true coordinates can't be recovered from it.
+function approxCoord(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
+// Shared by the list feed and the map so both honour exactly the same filters.
+function buildJobWhere(q: JobSearchQuery) {
+  const where: any = q.status === "OPEN" ? { status: q.status, expiresAt: { gt: new Date() } } : { status: q.status };
+  if (q.category) where.category = { equals: q.category, mode: "insensitive" };
+  if (q.payType) where.payType = q.payType;
+  if (q.minWorkers) where.workersNeeded = { gte: q.minWorkers };
+  if (q.maxWorkers) where.workersNeeded = { ...(where.workersNeeded || {}), lte: q.maxWorkers };
+  if (q.durationContains) where.durationEstimate = { contains: q.durationContains, mode: "insensitive" };
+  if (q.minPay) {
+    where.AND = [{ OR: [{ budgetMax: { gte: q.minPay } }, { budgetMin: { gte: q.minPay } }] }];
+  }
+  if (q.q) {
+    where.OR = [
+      { title: { contains: q.q, mode: "insensitive" } },
+      { description: { contains: q.q, mode: "insensitive" } },
+    ];
+  }
+  if (q.hasPhotos) where.previewPhotoUrls = { isEmpty: false };
+  if (q.noIdRequired) where.requiresIdVerification = false;
+  if (q.verifiedOnly) where.requiresIdVerification = true;
+  // Rating = the poster's average rating, "N stars and up".
+  if (q.minRating) where.hirer = { avgRating: { gte: q.minRating } };
+
+  // Posted-time window: the tightest of whatever was supplied wins.
+  const postedSince: number[] = [];
+  if (q.postedAfter) postedSince.push(q.postedAfter.getTime());
+  if (q.postedWithinHours) postedSince.push(Date.now() - q.postedWithinHours * 3600 * 1000);
+  if (postedSince.length > 0) where.createdAt = { gte: new Date(Math.max(...postedSince)) };
+
+  if (q.endingWithinHours && q.status === "OPEN") {
+    where.expiresAt = { gt: new Date(), lte: new Date(Date.now() + q.endingWithinHours * 3600 * 1000) };
+  }
+  return where;
 }
 
 jobRouter.get(
@@ -150,32 +206,7 @@ jobRouter.get(
   asyncHandler(async (req, res) => {
     const q = searchSchema.parse(req.query);
 
-    const where: any = q.status === "OPEN" ? { status: q.status, expiresAt: { gt: new Date() } } : { status: q.status };
-    if (q.category) where.category = { equals: q.category, mode: "insensitive" };
-    if (q.payType) where.payType = q.payType;
-    if (q.minWorkers) where.workersNeeded = { gte: q.minWorkers };
-    if (q.maxWorkers) where.workersNeeded = { ...(where.workersNeeded || {}), lte: q.maxWorkers };
-    if (q.durationContains) where.durationEstimate = { contains: q.durationContains, mode: "insensitive" };
-    if (q.minPay || q.maxPay) {
-      where.AND = [
-        ...(q.minPay ? [{ OR: [{ budgetMax: { gte: q.minPay } }, { budgetMin: { gte: q.minPay } }] }] : []),
-        ...(q.maxPay ? [{ OR: [{ budgetMin: { lte: q.maxPay } }, { budgetMax: { lte: q.maxPay } }] }] : []),
-      ];
-    }
-    if (q.q) {
-      where.OR = [
-        { title: { contains: q.q, mode: "insensitive" } },
-        { description: { contains: q.q, mode: "insensitive" } },
-      ];
-    }
-    if (q.hasPhotos) where.previewPhotoUrls = { isEmpty: false };
-    if (q.noIdRequired) where.requiresIdVerification = false;
-    if (q.verifiedOnly) where.requiresIdVerification = true;
-    if (q.minRating) where.hirer = { avgRating: { gte: q.minRating } };
-    if (q.postedWithinHours) where.createdAt = { gte: new Date(Date.now() - q.postedWithinHours * 3600 * 1000) };
-    if (q.endingWithinHours && q.status === "OPEN") {
-      where.expiresAt = { gt: new Date(), lte: new Date(Date.now() + q.endingWithinHours * 3600 * 1000) };
-    }
+    const where = buildJobWhere(q);
 
     const orderBy: any =
       q.sort === "pay_high" ? [{ budgetMax: { sort: "desc", nulls: "last" } }, { budgetMin: "desc" }]
@@ -185,37 +216,92 @@ jobRouter.get(
 
     const totalCount = await prisma.job.count({ where });
 
-    let jobs = await prisma.job.findMany({
+    const rows = await prisma.job.findMany({
       where,
-      include: { hirer: { select: { id: true, firstName: true, lastName: true, avgRating: true, avatarUrl: true } }, assignments: { select: { workerId: true } }, _count: { select: { bids: true } } },
+      include: {
+        hirer: { select: { id: true, firstName: true, lastName: true, avgRating: true, avatarUrl: true } },
+        assignments: { select: { workerId: true } },
+        _count: { select: APPLICANT_COUNT_SELECT },
+      },
       orderBy,
       take: q.lat && q.lng ? undefined : q.pageSize, // if geo-filtering, paginate after distance filter
       skip: q.lat && q.lng ? undefined : (q.page - 1) * q.pageSize,
     });
 
+    // Mask first, then derive everything else from the masked job. That way
+    // the distance we return (and filter on) can't be used to triangulate the
+    // exact address from a few different vantage points.
+    const viewer = req.auth ? { userId: req.auth.userId, role: req.auth.role } : undefined;
+    let jobs = rows.map((j) => withApplicantCount(maskJobLocation(j, viewer)));
+
     if (q.lat !== undefined && q.lng !== undefined) {
-      const withDistance = jobs.map((j: (typeof jobs)[number]) => ({
+      const withDistance = jobs.map((j) => ({
         ...j,
-        distanceKm: distanceKm(q.lat!, q.lng!, j.latitude, j.longitude),
+        distanceKm: Math.round(distanceKm(q.lat!, q.lng!, j.latitude, j.longitude) * 10) / 10,
       }));
       jobs = withDistance
-        .filter((j: (typeof withDistance)[number]) => j.distanceKm <= q.radiusKm)
+        .filter((j) => j.distanceKm <= q.radiusKm)
         // Keep the DB ordering unless the user asked for "nearest" (or didn't pick a sort).
-        .sort((a: (typeof withDistance)[number], b: (typeof withDistance)[number]) =>
-          q.sort === "nearest" ? a.distanceKm - b.distanceKm : 0
-        )
-        .slice((q.page - 1) * q.pageSize, q.page * q.pageSize) as typeof jobs;
+        .sort((a, b) => (q.sort === "nearest" ? a.distanceKm - b.distanceKm : 0))
+        .slice((q.page - 1) * q.pageSize, q.page * q.pageSize);
     }
 
-    const maskedJobs = jobs.map((j: (typeof jobs)[number]) => maskJobLocation(j, req.auth ? { userId: req.auth.userId, role: req.auth.role } : undefined));
-
     res.json({
-      jobs: maskedJobs,
+      jobs,
       total: totalCount,
       page: q.page,
       pageSize: q.pageSize,
       totalPages: Math.ceil(totalCount / q.pageSize),
     });
+  })
+);
+
+// ------------------------------------------------------------
+// MAP DISCOVERY — every available job, at approximate locations only.
+// Separate from /search so the map isn't limited to one page of list results.
+// The street address, exact coordinates, hirer identity and applicant
+// identities are never part of this payload, for anyone (the poster included —
+// exact locations only live on the job detail screen, for participants).
+// ------------------------------------------------------------
+const MAP_MAX_JOBS = 500;
+
+jobRouter.get(
+  "/map",
+  optionalAuth,
+  asyncHandler(async (req, res) => {
+    const q = searchSchema.parse(req.query);
+    // Discovery only shows jobs that are still open and taking bids.
+    const where = buildJobWhere({ ...q, status: "OPEN" });
+
+    const rows = await prisma.job.findMany({
+      where,
+      select: {
+        id: true,
+        title: true,
+        category: true,
+        payType: true,
+        budgetMin: true,
+        budgetMax: true,
+        currency: true,
+        city: true,
+        createdAt: true,
+        expiresAt: true,
+        latitude: true,
+        longitude: true,
+        _count: { select: APPLICANT_COUNT_SELECT },
+      },
+      orderBy: { createdAt: "desc" },
+      take: MAP_MAX_JOBS,
+    });
+
+    const jobs = rows.map(({ _count, latitude, longitude, ...job }) => ({
+      ...job,
+      latitude: approxCoord(latitude),
+      longitude: approxCoord(longitude),
+      applicantCount: _count.bids,
+    }));
+
+    res.json({ jobs, total: jobs.length, truncated: jobs.length === MAP_MAX_JOBS });
   })
 );
 
@@ -248,8 +334,20 @@ jobRouter.get(
       return res.json(maskJobLocation(expired, req.auth ? { userId: req.auth.userId, role: req.auth.role } : undefined));
     }
 
-    const masked = maskJobLocation(job, req.auth ? { userId: req.auth.userId, role: req.auth.role } : undefined);
-    res.json(masked);
+    const viewer = req.auth ? { userId: req.auth.userId, role: req.auth.role } : undefined;
+    const masked = maskJobLocation(job, viewer);
+
+    // Applicant identities are private to the poster (and admins). Everyone
+    // else gets the headline count and, if they've bid, only their own bid.
+    const isAdmin = !!viewer && (viewer.role === "ADMIN" || viewer.role === "SUPERADMIN");
+    const canSeeAllBids = !!viewer && (viewer.userId === job.hirerId || isAdmin);
+    const visibleBids = canSeeAllBids ? job.bids : job.bids.filter((b) => !!viewer && b.bidderId === viewer.userId);
+
+    res.json({
+      ...masked,
+      bids: visibleBids,
+      applicantCount: job.bids.filter((b) => b.status !== "WITHDRAWN").length,
+    });
   })
 );
 

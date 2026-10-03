@@ -55,8 +55,24 @@ export interface Job {
   bids?: Bid[];
   checklistItems?: ChecklistItem[];
   questions?: JobQuestion[];
-  _count?: { bids: number };
+  applicantCount?: number; // live count of bids from the server (identities are never included)
   distanceKm?: number;
+}
+
+// Slim, privacy-safe job shape returned by GET /jobs/map — approximate
+// coordinates only, no address and no hirer/applicant identities.
+export interface MapJob {
+  id: string;
+  title: string;
+  category: string;
+  payType: "fixed" | "hourly";
+  budgetMin?: number | null;
+  budgetMax?: number | null;
+  currency: string;
+  city?: string | null;
+  latitude: number;
+  longitude: number;
+  applicantCount?: number;
 }
 
 export interface JobAssignment {

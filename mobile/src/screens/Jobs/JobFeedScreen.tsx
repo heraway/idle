@@ -4,7 +4,7 @@ import * as Location from "expo-location";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "../../context/ThemeContext";
 import { api } from "../../api/client";
-import { Job } from "../../types";
+import { Job, MapJob } from "../../types";
 import { Badge, Button, Chip, EmptyState, Avatar } from "../../components/UI";
 import JobsMap from "../../components/JobsMap";
 import { spacing, typography, radius } from "../../theme/theme";
@@ -12,19 +12,89 @@ import { FEED_CATEGORIES as CATEGORIES } from "../../constants/categories";
 
 type Sort = "newest" | "pay_high" | "pay_low" | "nearest" | "ending_soon";
 
+type PostedWindow = "hour" | "today" | "week" | "month" | "year" | "all";
+
 interface Filters {
   category?: string;
-  payType?: "fixed" | "hourly";
   minPay?: string;
-  maxPay?: string;
-  workers?: "solo" | "team"; // solo = exactly 1, team = 2+
   sort: Sort;
-  radiusKm?: number;
-  postedWithinHours?: number;
-  hasPhotos?: boolean;
-  noIdRequired?: boolean;
-  minRating?: number;
-  endingWithinHours?: number;
+  postedWindow?: PostedWindow; // undefined == "all"
+  minRating?: number; // poster rating, N stars and up
+}
+
+const POSTED_OPTIONS: { key: PostedWindow; label: string }[] = [
+  { key: "hour", label: "Last hour" },
+  { key: "today", label: "Today" },
+  { key: "week", label: "Past week" },
+  { key: "month", label: "Past month" },
+  { key: "year", label: "Past year" },
+  { key: "all", label: "All time" },
+];
+
+// Turns a posted-time choice into the moment jobs must have been posted
+// after. Computed on the device so "Today" means since *your* midnight.
+function postedAfter(window?: PostedWindow): Date | undefined {
+  const now = new Date();
+  switch (window) {
+    case "hour":
+      return new Date(now.getTime() - 60 * 60 * 1000);
+    case "today":
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    case "week":
+      return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    case "month": {
+      const d = new Date(now);
+      d.setMonth(d.getMonth() - 1);
+      return d;
+    }
+    case "year": {
+      const d = new Date(now);
+      d.setFullYear(d.getFullYear() - 1);
+      return d;
+    }
+    default:
+      return undefined;
+  }
+}
+
+// One place that turns filter state into query params, so the list and the
+// map always apply exactly the same filters.
+function buildFilterParams(filters: Filters, search: string) {
+  const p = new URLSearchParams();
+  const add = (k: string, v: unknown) => {
+    if (v !== undefined && v !== null && v !== "" && v !== false) p.append(k, String(v));
+  };
+  if (filters.category && filters.category !== "All") add("category", filters.category);
+  add("minPay", filters.minPay);
+  add("minRating", filters.minRating);
+  add("postedAfter", postedAfter(filters.postedWindow)?.toISOString());
+  add("sort", filters.sort);
+  add("q", search.trim());
+  return p;
+}
+
+// Centre on the user when jobs are nearby, otherwise frame the jobs
+// themselves — so the first thing on the map is never empty ocean.
+function initialMapRegion(jobs: MapJob[], user: { latitude: number; longitude: number } | null) {
+  if (jobs.length > 0) {
+    if (user && jobs.some((j) => Math.abs(j.latitude - user.latitude) < 0.3 && Math.abs(j.longitude - user.longitude) < 0.3)) {
+      return { ...user, latitudeDelta: 0.25, longitudeDelta: 0.25 };
+    }
+    const lats = jobs.map((j) => j.latitude);
+    const lngs = jobs.map((j) => j.longitude);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLng = Math.min(...lngs);
+    const maxLng = Math.max(...lngs);
+    return {
+      latitude: (minLat + maxLat) / 2,
+      longitude: (minLng + maxLng) / 2,
+      latitudeDelta: Math.max((maxLat - minLat) * 1.5, 0.08),
+      longitudeDelta: Math.max((maxLng - minLng) * 1.5, 0.08),
+    };
+  }
+  if (user) return { ...user, latitudeDelta: 0.25, longitudeDelta: 0.25 };
+  return { latitude: 0, longitude: 0, latitudeDelta: 60, longitudeDelta: 60 };
 }
 
 const DEFAULT_FILTERS: Filters = { sort: "newest" };
@@ -39,18 +109,9 @@ const SORTS: { key: Sort; label: string; icon: React.ComponentProps<typeof Ionic
 // How many filters (beyond category/sort quick-chips) are switched on —
 // shown as a badge on the filter button.
 function countActive(f: Filters) {
-  return [
-    f.payType,
-    f.minPay,
-    f.maxPay,
-    f.workers,
-    f.radiusKm,
-    f.postedWithinHours,
-    f.hasPhotos,
-    f.noIdRequired,
-    f.minRating,
-    f.endingWithinHours,
-  ].filter((v) => v !== undefined && v !== "" && v !== false).length;
+  return [f.minPay, f.postedWindow && f.postedWindow !== "all" ? f.postedWindow : undefined, f.minRating].filter(
+    (v) => v !== undefined && v !== ""
+  ).length;
 }
 
 function useDebounced<T>(value: T, ms: number) {
@@ -82,45 +143,27 @@ export default function JobFeedScreen({ navigation }: any) {
     })();
   }, []);
 
+  const [mapJobs, setMapJobs] = useState<MapJob[]>([]);
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
+
   const mappableJobs = useMemo(
-    () => jobs.filter((j) => typeof j.latitude === "number" && typeof j.longitude === "number"),
-    [jobs]
+    () => mapJobs.filter((j) => Number.isFinite(j.latitude) && Number.isFinite(j.longitude)),
+    [mapJobs]
   );
 
-  const mapInitialRegion = useMemo(() => {
-    if (userLocation) return { ...userLocation, latitudeDelta: 0.25, longitudeDelta: 0.25 };
-    if (mappableJobs.length > 0) {
-      return { latitude: mappableJobs[0].latitude, longitude: mappableJobs[0].longitude, latitudeDelta: 0.5, longitudeDelta: 0.5 };
-    }
-    return { latitude: 0, longitude: 0, latitudeDelta: 60, longitudeDelta: 60 };
-  }, [userLocation, mappableJobs]);
+  const mapInitialRegion = useMemo(() => initialMapRegion(mappableJobs, userLocation), [mappableJobs, userLocation]);
 
   const loadJobs = useCallback(async () => {
     setLoading(true);
     try {
-      const p = new URLSearchParams();
-      const add = (k: string, v: unknown) => {
-        if (v !== undefined && v !== null && v !== "" && v !== false) p.append(k, String(v));
-      };
-      if (filters.category && filters.category !== "All") add("category", filters.category);
-      add("payType", filters.payType);
-      add("minPay", filters.minPay);
-      add("maxPay", filters.maxPay);
-      if (filters.workers === "solo") add("maxWorkers", 1);
-      if (filters.workers === "team") add("minWorkers", 2);
-      add("sort", filters.sort);
-      add("postedWithinHours", filters.postedWithinHours);
-      add("endingWithinHours", filters.endingWithinHours);
-      add("minRating", filters.minRating);
-      if (filters.hasPhotos) add("hasPhotos", "true");
-      if (filters.noIdRequired) add("noIdRequired", "true");
-      add("q", debouncedSearch.trim());
+      const p = buildFilterParams(filters, debouncedSearch);
 
-      // Distance only works when we know where the phone is.
-      if (userLocation && (filters.radiusKm || filters.sort === "nearest")) {
-        add("lat", userLocation.latitude);
-        add("lng", userLocation.longitude);
-        add("radiusKm", filters.radiusKm ?? 20000);
+      // Distance sorting only works when we know where the phone is.
+      if (userLocation && filters.sort === "nearest") {
+        p.append("lat", String(userLocation.latitude));
+        p.append("lng", String(userLocation.longitude));
+        p.append("radiusKm", "20000");
       }
 
       const qs = p.toString();
@@ -136,6 +179,25 @@ export default function JobFeedScreen({ navigation }: any) {
   useEffect(() => {
     loadJobs();
   }, [loadJobs]);
+
+  // The map has its own endpoint: every available job (not just the first
+  // page of the list), at approximate locations, with the same filters.
+  const loadMapJobs = useCallback(async () => {
+    setMapError(null);
+    try {
+      const qs = buildFilterParams(filters, debouncedSearch).toString();
+      const res = await api<{ jobs: MapJob[] }>(`/jobs/map${qs ? `?${qs}` : ""}`);
+      setMapJobs(res.jobs || []);
+      setMapLoaded(true);
+    } catch (e: any) {
+      console.error("Failed to load map jobs:", e);
+      setMapError(e?.message || "Please check your connection.");
+    }
+  }, [filters, debouncedSearch]);
+
+  useEffect(() => {
+    if (viewMode === "map") loadMapJobs();
+  }, [viewMode, loadMapJobs]);
 
   const activeCount = countActive(filters);
 
@@ -305,13 +367,21 @@ export default function JobFeedScreen({ navigation }: any) {
         />
       ) : (
         <View style={{ flex: 1 }}>
-          {mappableJobs.length === 0 && !loading ? (
+          {mapError ? (
+            <View style={{ flex: 1, padding: spacing.lg }}>
+              <EmptyState icon="alert-circle-outline" message={`Couldn't load jobs for the map. ${mapError}`} />
+              <Button title="Try again" onPress={loadMapJobs} />
+            </View>
+          ) : !mapLoaded ? (
+            <EmptyState icon="map-outline" message="Loading jobs..." />
+          ) : mappableJobs.length === 0 ? (
             <EmptyState icon="map-outline" message="No jobs to show on the map. Try widening your filters." />
           ) : (
             <JobsMap
               jobs={mappableJobs}
               initialRegion={mapInitialRegion}
               primaryColor={theme.primary}
+              userLocation={userLocation}
               onPressJob={(jobId: string) => navigation.navigate("JobDetail", { jobId })}
             />
           )}
@@ -321,7 +391,6 @@ export default function JobFeedScreen({ navigation }: any) {
       <FilterModal
         visible={filterModalVisible}
         filters={filters}
-        hasLocation={!!userLocation}
         onApply={(f) => {
           setFilters(f);
           setFilterModalVisible(false);
@@ -352,7 +421,7 @@ function JobCard({ job, onPress }: { job: Job; onPress: () => void }) {
       : `${cur}${job.budgetMin}`;
   const left = timeLeft(job.expiresAt);
   const urgent = new Date(job.expiresAt).getTime() - Date.now() < 24 * 3600 * 1000;
-  const bids = job._count?.bids ?? 0;
+  const applicants = job.applicantCount ?? 0;
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
@@ -427,7 +496,7 @@ function JobCard({ job, onPress }: { job: Job; onPress: () => void }) {
               </Text>
             </View>
             <Text style={{ color: theme.accentText, fontSize: 12, marginTop: 2 }}>
-              {bids === 0 ? "Be the first to bid" : `${bids} bid${bids === 1 ? "" : "s"} so far`}
+              {applicants === 0 ? "Be the first to bid" : `${applicants} applicant${applicants === 1 ? "" : "s"}`}
             </Text>
           </View>
           <View
@@ -454,13 +523,11 @@ function JobCard({ job, onPress }: { job: Job; onPress: () => void }) {
 function FilterModal({
   visible,
   filters,
-  hasLocation,
   onApply,
   onClose,
 }: {
   visible: boolean;
   filters: Filters;
-  hasLocation: boolean;
   onApply: (f: Filters) => void;
   onClose: () => void;
 }) {
@@ -479,63 +546,6 @@ function FilterModal({
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>{children}</View>
   );
 
-  const Toggle = ({
-    label,
-    sub,
-    value,
-    onChange,
-  }: {
-    label: string;
-    sub?: string;
-    value: boolean;
-    onChange: (v: boolean) => void;
-  }) => (
-    <TouchableOpacity
-      onPress={() => onChange(!value)}
-      activeOpacity={0.8}
-      style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10 }}
-    >
-      <View style={{ flex: 1 }}>
-        <Text style={{ color: theme.textPrimary, fontWeight: "600", fontSize: 15 }}>{label}</Text>
-        {sub ? <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 1 }}>{sub}</Text> : null}
-      </View>
-      <View
-        style={{
-          width: 24,
-          height: 24,
-          borderRadius: 7,
-          borderWidth: 1.5,
-          borderColor: value ? theme.primary : theme.border,
-          backgroundColor: value ? theme.primary : "transparent",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        {value ? <Ionicons name="checkmark" size={16} color="#fff" /> : null}
-      </View>
-    </TouchableOpacity>
-  );
-
-  const numInput = (key: "minPay" | "maxPay", placeholder: string) => (
-    <TextInput
-      placeholder={placeholder}
-      placeholderTextColor={theme.textSecondary + "99"}
-      keyboardType="numeric"
-      value={local[key] || ""}
-      onChangeText={(t) => setLocal((f) => ({ ...f, [key]: t.replace(/[^0-9.]/g, "") }))}
-      style={{
-        flex: 1,
-        height: 48,
-        backgroundColor: theme.surfaceAlt,
-        borderRadius: radius.md,
-        paddingHorizontal: 14,
-        color: theme.textPrimary,
-        borderWidth: 1,
-        borderColor: theme.border,
-      }}
-    />
-  );
-
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: theme.overlay }}>
@@ -551,89 +561,53 @@ function FilterModal({
         >
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: spacing.lg, paddingBottom: spacing.sm }}>
             <Text style={[typography.h2, { color: theme.textPrimary }]}>Filters</Text>
-            <TouchableOpacity onPress={() => setLocal({ ...DEFAULT_FILTERS, category: local.category })}>
+            <TouchableOpacity onPress={() => setLocal({ ...DEFAULT_FILTERS, category: local.category, sort: local.sort })}>
               <Text style={{ color: theme.primary, fontWeight: "700" }}>Reset all</Text>
             </TouchableOpacity>
           </View>
 
           <ScrollView contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.md }} keyboardShouldPersistTaps="handled">
-            <Label>Pay type</Label>
+            <Label>Posted Time</Label>
             <Row>
-              {(["fixed", "hourly"] as const).map((pt) => (
+              {POSTED_OPTIONS.map((o) => (
                 <Chip
-                  key={pt}
-                  label={pt === "fixed" ? "Fixed price" : "Hourly rate"}
-                  active={local.payType === pt}
-                  onPress={() => setLocal((f) => ({ ...f, payType: f.payType === pt ? undefined : pt }))}
+                  key={o.key}
+                  label={o.label}
+                  active={(local.postedWindow ?? "all") === o.key}
+                  onPress={() => setLocal((f) => ({ ...f, postedWindow: o.key === "all" ? undefined : o.key }))}
                 />
               ))}
             </Row>
 
-            <Label>Pay range</Label>
-            <View style={{ flexDirection: "row", gap: spacing.sm }}>
-              {numInput("minPay", "Min")}
-              {numInput("maxPay", "Max")}
-            </View>
-
-            <Label>Distance</Label>
-            {hasLocation ? (
-              <Row>
-                {[undefined, 5, 10, 25, 50].map((km) => (
-                  <Chip
-                    key={String(km)}
-                    label={km ? `${km} km` : "Any"}
-                    active={local.radiusKm === km}
-                    onPress={() => setLocal((f) => ({ ...f, radiusKm: km }))}
-                  />
-                ))}
-              </Row>
-            ) : (
-              <Text style={{ color: theme.textSecondary, fontSize: 13 }}>
-                Turn on location for Idle in your phone settings to filter by distance.
-              </Text>
-            )}
-
-            <Label>Posted</Label>
+            <Label>Rating</Label>
             <Row>
-              {[
-                { l: "Any time", v: undefined },
-                { l: "Last 24h", v: 24 },
-                { l: "Last 3 days", v: 72 },
-                { l: "Last week", v: 168 },
-              ].map((o) => (
-                <Chip key={o.l} label={o.l} active={local.postedWithinHours === o.v} onPress={() => setLocal((f) => ({ ...f, postedWithinHours: o.v }))} />
+              {[1, 2, 3, 4, 5].map((n) => (
+                <Chip
+                  key={n}
+                  label={`${n} star${n === 1 ? "" : "s"}`}
+                  active={local.minRating === n}
+                  onPress={() => setLocal((f) => ({ ...f, minRating: f.minRating === n ? undefined : n }))}
+                />
               ))}
             </Row>
 
-            <Label>Team size</Label>
-            <Row>
-              <Chip label="Any" active={!local.workers} onPress={() => setLocal((f) => ({ ...f, workers: undefined }))} />
-              <Chip label="Solo job" active={local.workers === "solo"} onPress={() => setLocal((f) => ({ ...f, workers: "solo" }))} />
-              <Chip label="Team (2+)" active={local.workers === "team"} onPress={() => setLocal((f) => ({ ...f, workers: "team" }))} />
-            </Row>
-
-            <Label>Poster</Label>
-            <Row>
-              <Chip label="Any rating" active={!local.minRating} onPress={() => setLocal((f) => ({ ...f, minRating: undefined }))} />
-              <Chip label="4★ and up" active={local.minRating === 4} onPress={() => setLocal((f) => ({ ...f, minRating: 4 }))} />
-              <Chip label="4.5★ and up" active={local.minRating === 4.5} onPress={() => setLocal((f) => ({ ...f, minRating: 4.5 }))} />
-            </Row>
-
-            <View style={{ marginTop: spacing.md }}>
-              <Toggle label="Has photos" sub="Only jobs with pictures of the work site" value={!!local.hasPhotos} onChange={(v) => setLocal((f) => ({ ...f, hasPhotos: v }))} />
-              <Toggle
-                label="No ID verification needed"
-                sub="Hide jobs that require you to be ID-verified"
-                value={!!local.noIdRequired}
-                onChange={(v) => setLocal((f) => ({ ...f, noIdRequired: v }))}
-              />
-              <Toggle
-                label="Ending in the next 24h"
-                sub="Jobs about to close for bids"
-                value={local.endingWithinHours === 24}
-                onChange={(v) => setLocal((f) => ({ ...f, endingWithinHours: v ? 24 : undefined }))}
-              />
-            </View>
+            <Label>Pay</Label>
+            <TextInput
+              placeholder="Minimum Pay"
+              placeholderTextColor={theme.textSecondary + "99"}
+              keyboardType="numeric"
+              value={local.minPay || ""}
+              onChangeText={(t) => setLocal((f) => ({ ...f, minPay: t.replace(/[^0-9.]/g, "") }))}
+              style={{
+                height: 48,
+                backgroundColor: theme.surfaceAlt,
+                borderRadius: radius.md,
+                paddingHorizontal: 14,
+                color: theme.textPrimary,
+                borderWidth: 1,
+                borderColor: theme.border,
+              }}
+            />
           </ScrollView>
 
           <View style={{ flexDirection: "row", gap: spacing.sm, padding: spacing.lg, paddingTop: spacing.sm }}>

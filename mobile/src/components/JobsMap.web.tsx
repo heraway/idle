@@ -1,9 +1,10 @@
 import React from "react";
 import { View, Text } from "react-native";
-import { Job } from "../types";
+import { MapJob } from "../types";
 
 type Props = {
-  jobs: Job[];
+  jobs: MapJob[];
+  userLocation?: unknown; // unused on web
   initialRegion: unknown; // unused on web — kept so JobFeedScreen doesn't need platform branching at the call site
   primaryColor: string;
   onPressJob: (jobId: string) => void;

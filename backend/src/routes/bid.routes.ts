@@ -39,6 +39,13 @@ bidRouter.post(
       }
     }
 
+    // An accepted bid is locked in. Re-submitting would silently flip it back
+    // to PENDING while the worker is still assigned to the job.
+    const existing = await prisma.bid.findUnique({
+      where: { jobId_bidderId: { jobId: data.jobId, bidderId: req.auth!.userId } },
+    });
+    if (existing?.status === "ACCEPTED") throw new ApiError(400, "Your bid on this job has already been accepted");
+
     const bid = await prisma.bid.upsert({
       where: { jobId_bidderId: { jobId: data.jobId, bidderId: req.auth!.userId } },
       update: { amount: data.amount, message: data.message, status: "PENDING" },
@@ -57,6 +64,11 @@ bidRouter.post(
     const bid = await prisma.bid.findUnique({ where: { id: req.params.id } });
     if (!bid) throw new ApiError(404, "Bid not found");
     if (bid.bidderId !== req.auth!.userId) throw new ApiError(403, "Not your bid");
+    // Only a bid that's still waiting can be withdrawn — withdrawing an accepted
+    // bid would leave the job assigned to a worker with no live bid behind it.
+    if (bid.status !== "PENDING") {
+      throw new ApiError(400, bid.status === "WITHDRAWN" ? "This bid was already withdrawn" : "Only pending bids can be withdrawn");
+    }
     const updated = await prisma.bid.update({ where: { id: bid.id }, data: { status: "WITHDRAWN" } });
     res.json(updated);
   })
