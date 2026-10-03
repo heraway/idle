@@ -3,8 +3,10 @@ import { View, Text, ScrollView, TouchableOpacity, Alert, Image } from "react-na
 import * as Location from "expo-location";
 import * as ImagePicker from "expo-image-picker";
 import { useTheme } from "../../context/ThemeContext";
-import { api, apiUpload, uriToBlob } from "../../api/client";
-import { Button, Input, ScreenTitle } from "../../components/UI";
+import { api, apiUpload } from "../../api/client";
+import { appendImage, imageMediaTypes } from "../../utils/media";
+import { Button, Input, Chip, SectionLabel } from "../../components/UI";
+import { Ionicons } from "@expo/vector-icons";
 import { spacing, typography, radius } from "../../theme/theme";
 import { JOB_CATEGORIES as CATEGORIES } from "../../constants/categories";
 
@@ -14,7 +16,7 @@ export default function PostJobScreen({ navigation }: any) {
   const { theme } = useTheme();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory] = useState<(typeof CATEGORIES)[number]>(CATEGORIES[0]);
+  const [category, setCategory] = useState<string>(CATEGORIES[0]);
   const [payType, setPayType] = useState<"fixed" | "hourly">("fixed");
   const [budgetMin, setBudgetMin] = useState("");
   const [budgetMax, setBudgetMax] = useState("");
@@ -24,31 +26,40 @@ export default function PostJobScreen({ navigation }: any) {
   const [requiresLicense, setRequiresLicense] = useState("");
   const [requiresIdVerification, setRequiresIdVerification] = useState(false);
   const [checklist, setChecklist] = useState<string[]>([""]);
-  const [photos, setPhotos] = useState<string[]>([]); // local URIs, uploaded after job creation
+  const [photos, setPhotos] = useState<{ uri: string; mimeType?: string | null }[]>([]); // local picks, uploaded after job creation
+  const [address, setAddress] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const pickPhotos = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert("Permission needed", "Allow photo library access to add pictures of the work site.");
-      return;
-    }
     const remaining = MAX_PREVIEW_PHOTOS - photos.length;
     if (remaining <= 0) return;
 
+    // The system photo picker needs no permission prompt on modern Android/iOS,
+    // so don't block on one — that silently stopped some people adding photos.
     const result = await ImagePicker.launchImageLibraryAsync({
-      // ImagePicker.MediaTypeOptions is deprecated as of newer expo-image-picker
-      // versions — this is the replacement syntax (array of MediaType strings).
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: imageMediaTypes(),
       allowsMultipleSelection: true,
       selectionLimit: remaining,
       quality: 0.7,
     });
     if (result.canceled) return;
-    setPhotos((prev) => [...prev, ...result.assets.map((a) => a.uri)].slice(0, MAX_PREVIEW_PHOTOS));
+    setPhotos((prev) => [...prev, ...result.assets.map((a) => ({ uri: a.uri, mimeType: a.mimeType }))].slice(0, MAX_PREVIEW_PHOTOS));
   };
 
-  const removePhoto = (uri: string) => setPhotos((prev) => prev.filter((p) => p !== uri));
+  const takePhoto = async () => {
+    if (photos.length >= MAX_PREVIEW_PHOTOS) return;
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("Camera permission needed", "Allow camera access in your phone settings to take photos.");
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
+    if (result.canceled || !result.assets[0]) return;
+    const a = result.assets[0];
+    setPhotos((prev) => [...prev, { uri: a.uri, mimeType: a.mimeType }].slice(0, MAX_PREVIEW_PHOTOS));
+  };
+
+  const removePhoto = (uri: string) => setPhotos((prev) => prev.filter((p) => p.uri !== uri));
 
   const handleSubmit = async () => {
     if (!budgetMin || Number(budgetMin) <= 0) {
@@ -62,8 +73,19 @@ export default function PostJobScreen({ navigation }: any) {
 
     setSubmitting(true);
     try {
-      const loc = await Location.getCurrentPositionAsync({}).catch(() => null);
-      const coords = loc?.coords || { latitude: 0, longitude: 0 };
+      // Ask for location permission here too (the feed may not have been
+      // opened with it granted). Without it the job would be pinned at 0,0.
+      const perm = await Location.requestForegroundPermissionsAsync();
+      const loc = perm.granted ? await Location.getCurrentPositionAsync({}).catch(() => null) : null;
+      if (!loc) {
+        Alert.alert(
+          "Location needed",
+          "Idle needs your location to pin this job on the map so nearby workers can find it. Turn location on and try again."
+        );
+        setSubmitting(false);
+        return;
+      }
+      const coords = loc.coords;
 
       const job = await api<{ id: string }>("/jobs", {
         method: "POST",
@@ -81,6 +103,7 @@ export default function PostJobScreen({ navigation }: any) {
           requiresIdVerification,
           latitude: coords.latitude,
           longitude: coords.longitude,
+          address: address.trim() || undefined,
           checklist: checklist.filter((c) => c.trim().length > 0),
         },
       });
@@ -88,14 +111,15 @@ export default function PostJobScreen({ navigation }: any) {
       if (photos.length > 0) {
         const form = new FormData();
         for (let i = 0; i < photos.length; i++) {
-          const blob = await uriToBlob(photos[i]);
-          form.append("photos", blob, `photo${i}.jpg`);
+          await appendImage(form, "photos", photos[i], `job${i}`);
         }
-        // Best-effort — the job itself is already posted at this point, so a
-        // photo-upload hiccup shouldn't block the whole flow or lose the job.
-        await apiUpload(`/jobs/${job.id}/preview-photos`, form).catch((e) =>
-          Alert.alert("Job posted, but photos failed to upload", e.message)
-        );
+        // The job itself is already posted, so a photo hiccup shouldn't lose it —
+        // but do tell the poster, with the real reason.
+        try {
+          await apiUpload(`/jobs/${job.id}/preview-photos`, form);
+        } catch (e: any) {
+          Alert.alert("Job posted, but photos failed to upload", e.message);
+        }
       }
 
       Alert.alert("Job posted!", "Your job is now live and open for bids.");
@@ -111,22 +135,21 @@ export default function PostJobScreen({ navigation }: any) {
   };
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: theme.background }} contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing.xl }}>
-      <ScreenTitle>Post a job</ScreenTitle>
-
+    <ScrollView style={{ flex: 1, backgroundColor: theme.background }} contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}>
       <Input label="Title" value={title} onChangeText={setTitle} placeholder="e.g. Mow my backyard lawn" />
       <Input label="Description" value={description} onChangeText={setDescription} placeholder="What needs doing, and any details a worker should know" multiline />
+      <Input label="Address or landmark (only shown to the hired worker)" value={address} onChangeText={setAddress} placeholder="e.g. House 12, Kabulonga Rd" />
 
-      <Text style={[typography.bodyBold, { color: theme.textPrimary, marginBottom: spacing.xs }]}>Photos of the work site (optional)</Text>
+      <SectionLabel>Photos of the work site (optional)</SectionLabel>
       <Text style={[typography.caption, { color: theme.textSecondary, marginBottom: spacing.sm }]}>
-        Show bidders what they're actually walking into — up to {MAX_PREVIEW_PHOTOS} photos.
+        Show bidders what they're walking into — up to {MAX_PREVIEW_PHOTOS} photos.
       </Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.lg }}>
-        {photos.map((uri) => (
-          <View key={uri} style={{ position: "relative" }}>
-            <Image source={{ uri }} style={{ width: 80, height: 80, borderRadius: radius.sm }} />
+        {photos.map((p) => (
+          <View key={p.uri} style={{ position: "relative" }}>
+            <Image source={{ uri: p.uri }} style={{ width: 84, height: 84, borderRadius: radius.md }} />
             <TouchableOpacity
-              onPress={() => removePhoto(uri)}
+              onPress={() => removePhoto(p.uri)}
               style={{
                 position: "absolute",
                 top: -6,
@@ -139,48 +162,49 @@ export default function PostJobScreen({ navigation }: any) {
                 justifyContent: "center",
               }}
             >
-              <Text style={{ color: "#fff", fontWeight: "700", fontSize: 12 }}>✕</Text>
+              <Ionicons name="close" size={14} color="#fff" />
             </TouchableOpacity>
           </View>
         ))}
         {photos.length < MAX_PREVIEW_PHOTOS && (
-          <TouchableOpacity
-            onPress={pickPhotos}
-            style={{
-              width: 80,
-              height: 80,
-              borderRadius: radius.sm,
-              borderWidth: 1.5,
-              borderColor: theme.border,
-              borderStyle: "dashed",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Text style={{ fontSize: 22, color: theme.textSecondary }}>+</Text>
-          </TouchableOpacity>
+          <>
+            {[
+              { icon: "images-outline", label: "Gallery", onPress: pickPhotos },
+              { icon: "camera-outline", label: "Camera", onPress: takePhoto },
+            ].map((b) => (
+              <TouchableOpacity
+                key={b.label}
+                onPress={b.onPress}
+                activeOpacity={0.8}
+                style={{
+                  width: 84,
+                  height: 84,
+                  borderRadius: radius.md,
+                  borderWidth: 1.5,
+                  borderColor: theme.border,
+                  borderStyle: "dashed",
+                  backgroundColor: theme.surface,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 4,
+                }}
+              >
+                <Ionicons name={b.icon as any} size={22} color={theme.primary} />
+                <Text style={{ color: theme.textSecondary, fontSize: 11, fontWeight: "600" }}>{b.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </>
         )}
       </View>
 
-      <Text style={[typography.bodyBold, { color: theme.textPrimary, marginBottom: spacing.xs }]}>Category</Text>
+      <SectionLabel>Category</SectionLabel>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.md }}>
         {CATEGORIES.map((c) => (
-          <TouchableOpacity
-            key={c}
-            onPress={() => setCategory(c)}
-            style={{
-              paddingVertical: 8,
-              paddingHorizontal: 14,
-              borderRadius: radius.pill,
-              backgroundColor: category === c ? theme.primary : theme.chipBackground,
-            }}
-          >
-            <Text style={{ color: category === c ? theme.textInverse : theme.chipText, fontWeight: "600", fontSize: 13 }}>{c}</Text>
-          </TouchableOpacity>
+          <Chip key={c} label={c} active={category === c} onPress={() => setCategory(c)} />
         ))}
       </View>
 
-      <Text style={[typography.bodyBold, { color: theme.textPrimary, marginBottom: spacing.xs }]}>Pay type</Text>
+      <SectionLabel>Pay type</SectionLabel>
       <View style={{ flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md }}>
         {(["fixed", "hourly"] as const).map((pt) => (
           <TouchableOpacity
@@ -191,10 +215,12 @@ export default function PostJobScreen({ navigation }: any) {
               paddingVertical: 12,
               borderRadius: radius.md,
               alignItems: "center",
-              backgroundColor: payType === pt ? theme.primary : theme.chipBackground,
+              backgroundColor: payType === pt ? theme.primary : theme.surfaceAlt,
+              borderWidth: 1,
+              borderColor: payType === pt ? theme.primary : theme.border,
             }}
           >
-            <Text style={{ color: payType === pt ? theme.textInverse : theme.chipText, fontWeight: "600" }}>
+            <Text style={{ color: payType === pt ? "#fff" : theme.chipText, fontWeight: "700" }}>
               {pt === "fixed" ? "Fixed price" : "Hourly rate"}
             </Text>
           </TouchableOpacity>
@@ -203,10 +229,10 @@ export default function PostJobScreen({ navigation }: any) {
 
       <View style={{ flexDirection: "row", gap: spacing.sm }}>
         <View style={{ flex: 1 }}>
-          <Input label="Budget min ($) *" value={budgetMin} onChangeText={setBudgetMin} keyboardType="numeric" placeholder="20" />
+          <Input label="Budget min *" value={budgetMin} onChangeText={setBudgetMin} keyboardType="numeric" placeholder="20" />
         </View>
         <View style={{ flex: 1 }}>
-          <Input label="Budget max ($)" value={budgetMax} onChangeText={setBudgetMax} keyboardType="numeric" placeholder="40" />
+          <Input label="Budget max" value={budgetMax} onChangeText={setBudgetMax} keyboardType="numeric" placeholder="40" />
         </View>
       </View>
 
@@ -247,7 +273,7 @@ export default function PostJobScreen({ navigation }: any) {
         </Text>
       </TouchableOpacity>
 
-      <Text style={[typography.bodyBold, { color: theme.textPrimary, marginBottom: spacing.xs }]}>Task checklist (optional)</Text>
+      <SectionLabel>Task checklist (optional)</SectionLabel>
       <Text style={[typography.caption, { color: theme.textSecondary, marginBottom: spacing.sm }]}>
         The worker ticks these off as they go, so you can follow progress in real time.
       </Text>
@@ -262,7 +288,7 @@ export default function PostJobScreen({ navigation }: any) {
       ))}
       <Button title="+ Add another task" variant="secondary" onPress={() => setChecklist((c) => [...c, ""])} style={{ marginBottom: spacing.lg }} />
 
-      <Button title="Post Job" onPress={handleSubmit} loading={submitting} disabled={!title || !description} />
+      <Button title="Post job" icon="flash" onPress={handleSubmit} loading={submitting} disabled={!title || !description} />
     </ScrollView>
   );
 }

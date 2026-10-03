@@ -97,6 +97,13 @@ const searchSchema = z.object({
   minWorkers: z.coerce.number().optional(),
   maxWorkers: z.coerce.number().optional(),
   durationContains: z.string().optional(), // e.g. "1 day", "2-3 hours"
+  sort: z.enum(["newest", "pay_high", "pay_low", "nearest", "ending_soon"]).optional().default("newest"),
+  hasPhotos: z.enum(["true", "false", "1", "0"]).optional().transform((v) => v === "true" || v === "1"),
+  noIdRequired: z.enum(["true", "false", "1", "0"]).optional().transform((v) => v === "true" || v === "1"), // hide jobs that demand ID verification
+  verifiedOnly: z.enum(["true", "false", "1", "0"]).optional().transform((v) => v === "true" || v === "1"), // only jobs that require ID verification
+  minRating: z.coerce.number().min(0).max(5).optional(), // hirer's average rating
+  postedWithinHours: z.coerce.number().positive().optional(),
+  endingWithinHours: z.coerce.number().positive().optional(),
   status: z.string().optional().default("OPEN"),
   page: z.coerce.number().min(1).default(1),
   pageSize: z.coerce.number().min(1).max(50).default(20),
@@ -161,13 +168,27 @@ jobRouter.get(
         { description: { contains: q.q, mode: "insensitive" } },
       ];
     }
+    if (q.hasPhotos) where.previewPhotoUrls = { isEmpty: false };
+    if (q.noIdRequired) where.requiresIdVerification = false;
+    if (q.verifiedOnly) where.requiresIdVerification = true;
+    if (q.minRating) where.hirer = { avgRating: { gte: q.minRating } };
+    if (q.postedWithinHours) where.createdAt = { gte: new Date(Date.now() - q.postedWithinHours * 3600 * 1000) };
+    if (q.endingWithinHours && q.status === "OPEN") {
+      where.expiresAt = { gt: new Date(), lte: new Date(Date.now() + q.endingWithinHours * 3600 * 1000) };
+    }
+
+    const orderBy: any =
+      q.sort === "pay_high" ? [{ budgetMax: { sort: "desc", nulls: "last" } }, { budgetMin: "desc" }]
+      : q.sort === "pay_low" ? [{ budgetMin: { sort: "asc", nulls: "last" } }]
+      : q.sort === "ending_soon" ? { expiresAt: "asc" }
+      : { createdAt: "desc" };
 
     const totalCount = await prisma.job.count({ where });
 
     let jobs = await prisma.job.findMany({
       where,
       include: { hirer: { select: { id: true, firstName: true, lastName: true, avgRating: true, avatarUrl: true } }, assignments: { select: { workerId: true } }, _count: { select: { bids: true } } },
-      orderBy: { createdAt: "desc" },
+      orderBy,
       take: q.lat && q.lng ? undefined : q.pageSize, // if geo-filtering, paginate after distance filter
       skip: q.lat && q.lng ? undefined : (q.page - 1) * q.pageSize,
     });
@@ -179,7 +200,10 @@ jobRouter.get(
       }));
       jobs = withDistance
         .filter((j: (typeof withDistance)[number]) => j.distanceKm <= q.radiusKm)
-        .sort((a: (typeof withDistance)[number], b: (typeof withDistance)[number]) => a.distanceKm - b.distanceKm)
+        // Keep the DB ordering unless the user asked for "nearest" (or didn't pick a sort).
+        .sort((a: (typeof withDistance)[number], b: (typeof withDistance)[number]) =>
+          q.sort === "nearest" ? a.distanceKm - b.distanceKm : 0
+        )
         .slice((q.page - 1) * q.pageSize, q.page * q.pageSize) as typeof jobs;
     }
 

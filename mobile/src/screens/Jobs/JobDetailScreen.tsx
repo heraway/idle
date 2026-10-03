@@ -8,13 +8,16 @@ import {
   TextInput,
   StyleSheet,
   TouchableOpacity,
+  Linking,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { useTheme } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
-import { api, apiUpload, uriToBlob, API_URL } from "../../api/client";
+import { api, apiUpload, API_URL } from "../../api/client";
+import { appendImage } from "../../utils/media";
 import { Job, Bid } from "../../types";
 import { Card, Badge, Button, EmptyState } from "../../components/UI";
+import { Ionicons } from "@expo/vector-icons";
 import { spacing, typography, radius } from "../../theme/theme";
 
 const STATUS_TONE: Record<string, any> = {
@@ -174,11 +177,9 @@ export default function JobDetailScreen({ route, navigation }: any) {
     const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
     if (result.canceled || !result.assets?.[0]?.uri) return;
 
-    const form = new FormData();
-    const blob = await uriToBlob(result.assets[0].uri);
-    form.append("photo", blob, "photo.jpg");
-
     try {
+      const form = new FormData();
+      await appendImage(form, "photo", result.assets[0], "proof");
       await apiUpload(`/jobs/${job.id}/${endpoint}`, form);
       load();
     } catch (e: any) {
@@ -194,13 +195,11 @@ export default function JobDetailScreen({ route, navigation }: any) {
       result = await ImagePicker.launchCameraAsync({ quality: 0.6 });
     }
 
-    const form = new FormData();
-    if (result && !result.canceled && result.assets?.[0]?.uri) {
-      const blob = await uriToBlob(result.assets[0].uri);
-      form.append("photo", blob, "proof.jpg");
-    }
-
     try {
+      const form = new FormData();
+      if (result && !result.canceled && result.assets?.[0]?.uri) {
+        await appendImage(form, "photo", result.assets[0], "proof");
+      }
       await apiUpload(`/checklist/${itemId}/complete`, form);
       load();
     } catch (e: any) {
@@ -256,9 +255,9 @@ export default function JobDetailScreen({ route, navigation }: any) {
         <Badge label={job.category} />
         <Badge
           label={
-            job.payType === "hourly"
-              ? `${job.currency} ${job.budgetMin}-${job.budgetMax}/hr`
-              : `${job.currency} ${job.budgetMin}-${job.budgetMax}`
+            `${job.currency === "USD" ? "$" : job.currency + " "}${job.budgetMin ?? "?"}${
+              job.budgetMax && job.budgetMax !== job.budgetMin ? `–${job.budgetMax}` : ""
+            }${job.payType === "hourly" ? "/hr" : ""}`
           }
           tone="accent"
         />
@@ -273,6 +272,26 @@ export default function JobDetailScreen({ route, navigation }: any) {
           <Badge label="ID verification required" tone="warning" />
         )}
       </View>
+
+      {(isHirer || isWorker) && (
+        <View style={{ flexDirection: "row", gap: spacing.sm, marginBottom: spacing.lg }}>
+          <Button
+            title="Chat"
+            icon="chatbubbles"
+            onPress={() => navigation.navigate("Chat", { jobId: job.id, jobTitle: job.title })}
+            style={{ flex: 1 }}
+          />
+          <Button
+            title="Directions"
+            icon="navigate"
+            variant="secondary"
+            onPress={() =>
+              Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${job.latitude},${job.longitude}`)
+            }
+            style={{ flex: 1 }}
+          />
+        </View>
+      )}
 
       <Text
         style={[
@@ -641,10 +660,12 @@ export default function JobDetailScreen({ route, navigation }: any) {
         </Card>
       )}
 
-      {/* Chat / messages link */}
-      {(isHirer || isWorker) && job.status !== "OPEN" && (
+      {/* Chat / messages link — available to the hirer and any accepted worker,
+          even while a multi-worker job is still OPEN for more bids. */}
+      {(isHirer || isWorker) && (
         <Button
           title="Open job chat"
+          icon="chatbubbles-outline"
           variant="secondary"
           onPress={() =>
             navigation.navigate("Chat", {

@@ -1,8 +1,9 @@
-import React, { useMemo, useRef } from "react";
-import { WebView } from "react-native-webview";
+import React, { useState } from "react";
+import { View, Text, TouchableOpacity } from "react-native";
+import MapView, { Marker, Region } from "react-native-maps";
+import { Ionicons } from "@expo/vector-icons";
 import { Job } from "../types";
-
-type Region = { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number };
+import { useTheme } from "../context/ThemeContext";
 
 type Props = {
   jobs: Job[];
@@ -11,84 +12,132 @@ type Props = {
   onPressJob: (jobId: string) => void;
 };
 
-// Renders on iOS/Android only — see JobsMap.web.tsx for the browser
-// fallback. Metro picks whichever file matches the target platform based
-// on the .native.tsx / .web.tsx suffix.
-//
-// Uses Leaflet + OpenStreetMap tiles inside a WebView instead of
-// react-native-maps/Google Maps. Google Maps Platform now requires a
-// billing account (card on file) to issue a working API key, even within
-// the free tier — this approach needs no account, no key, and no billing
-// of any kind.
-function buildHtml(jobs: Job[], initialRegion: Region, primaryColor: string): string {
-  const markers = jobs.map((job) => ({
-    id: job.id,
-    lat: job.latitude,
-    lng: job.longitude,
-    title: job.title.replace(/</g, "&lt;"),
-    category: job.category.replace(/</g, "&lt;"),
-    payType: job.payType,
-    budgetMin: job.budgetMin ?? null,
-    budgetMax: job.budgetMax ?? null,
-    currency: job.currency ?? "",
-  }));
+const money = (j: Job) => {
+  const cur = j.currency === "USD" ? "$" : `${j.currency} `;
+  if (j.budgetMin == null) return "—";
+  return `${cur}${j.budgetMin}${j.payType === "hourly" ? "/hr" : ""}`;
+};
 
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <style>
-    html, body, #map { height: 100%; margin: 0; padding: 0; }
-    .popup-title { font-weight: 700; margin-bottom: 2px; }
-    .popup-meta { color: #555; font-size: 12px; margin-bottom: 4px; }
-    .popup-link { color: ${primaryColor}; font-size: 12px; font-weight: 600; cursor: pointer; }
-  </style>
-</head>
-<body>
-  <div id="map"></div>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script>
-    const map = L.map('map').setView([${initialRegion.latitude}, ${initialRegion.longitude}], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors',
-      maxZoom: 19,
-    }).addTo(map);
-
-    // Blue dot for the user's current position (center of initialRegion).
-    L.circleMarker([${initialRegion.latitude}, ${initialRegion.longitude}], {
-      radius: 7, color: '#1a73e8', fillColor: '#4285F4', fillOpacity: 1, weight: 2,
-    }).addTo(map);
-
-    const jobs = ${JSON.stringify(markers)};
-    jobs.forEach((job) => {
-      const payLine = job.budgetMin != null
-        ? job.currency + ' ' + job.budgetMin + (job.budgetMax ? ('–' + job.budgetMax) : '')
-        : '';
-      const html =
-        '<div class="popup-title">' + job.title + '</div>' +
-        '<div class="popup-meta">' + job.category + ' · ' + (job.payType === 'hourly' ? 'hourly' : 'fixed') +
-          (payLine ? (' · ' + payLine) : '') + '</div>' +
-        '<div class="popup-link" onclick="window.ReactNativeWebView.postMessage(\\'' + job.id + '\\')">Tap for details →</div>';
-      L.marker([job.lat, job.lng]).addTo(map).bindPopup(html);
-    });
-  </script>
-</body>
-</html>`;
-}
-
+// Renders on iOS/Android only — see JobsMap.web.tsx for the browser fallback.
+// Pins are price bubbles (so the map answers "what pays what, and where"
+// at a glance) and tapping one opens a preview card instead of a tiny callout.
 export default function JobsMap({ jobs, initialRegion, primaryColor, onPressJob }: Props) {
-  const webviewRef = useRef<WebView>(null);
-  const html = useMemo(() => buildHtml(jobs, initialRegion, primaryColor), [jobs, initialRegion, primaryColor]);
+  const { theme } = useTheme();
+  const [selected, setSelected] = useState<Job | null>(null);
 
   return (
-    <WebView
-      ref={webviewRef}
-      originWhitelist={["*"]}
-      source={{ html }}
-      style={{ flex: 1 }}
-      onMessage={(event) => onPressJob(event.nativeEvent.data)}
-    />
+    <View style={{ flex: 1 }}>
+      <MapView
+        style={{ flex: 1 }}
+        initialRegion={initialRegion}
+        showsUserLocation
+        showsMyLocationButton
+        onPress={() => setSelected(null)}
+        userInterfaceStyle={theme.mode === "dark" ? "dark" : "light"}
+      >
+        {jobs.map((job) => {
+          const active = selected?.id === job.id;
+          return (
+            <Marker
+              key={job.id}
+              coordinate={{ latitude: job.latitude, longitude: job.longitude }}
+              onPress={(e) => {
+                e.stopPropagation?.();
+                setSelected(job);
+              }}
+              zIndex={active ? 10 : 1}
+            >
+              <View style={{ alignItems: "center" }}>
+                <View
+                  style={{
+                    backgroundColor: active ? "#FFFFFF" : primaryColor,
+                    borderColor: active ? primaryColor : "#FFFFFF",
+                    borderWidth: 2,
+                    paddingHorizontal: 10,
+                    paddingVertical: 5,
+                    borderRadius: 999,
+                  }}
+                >
+                  <Text style={{ color: active ? primaryColor : "#FFFFFF", fontWeight: "800", fontSize: 12 }}>{money(job)}</Text>
+                </View>
+                <View
+                  style={{
+                    width: 0,
+                    height: 0,
+                    borderLeftWidth: 5,
+                    borderRightWidth: 5,
+                    borderTopWidth: 6,
+                    borderLeftColor: "transparent",
+                    borderRightColor: "transparent",
+                    borderTopColor: active ? "#FFFFFF" : primaryColor,
+                  }}
+                />
+              </View>
+            </Marker>
+          );
+        })}
+      </MapView>
+
+      <View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          top: 10,
+          alignSelf: "center",
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 6,
+          backgroundColor: theme.surface + "EE",
+          borderColor: theme.border,
+          borderWidth: 1,
+          paddingHorizontal: 12,
+          paddingVertical: 6,
+          borderRadius: 999,
+        }}
+      >
+        <Ionicons name="shield-checkmark" size={13} color={theme.textSecondary} />
+        <Text style={{ color: theme.textSecondary, fontSize: 12, fontWeight: "600" }}>
+          {jobs.length} job{jobs.length === 1 ? "" : "s"} · locations are approximate
+        </Text>
+      </View>
+
+      {selected ? (
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onPress={() => onPressJob(selected.id)}
+          style={{
+            position: "absolute",
+            left: 12,
+            right: 12,
+            bottom: 14,
+            backgroundColor: theme.surface,
+            borderColor: theme.border,
+            borderWidth: 1,
+            borderRadius: 16,
+            padding: 14,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: theme.textSecondary, fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.6 }}>
+              {selected.category}
+              {typeof selected.distanceKm === "number" ? ` · ${selected.distanceKm.toFixed(1)} km` : ""}
+            </Text>
+            <Text style={{ color: theme.textPrimary, fontSize: 16, fontWeight: "700", marginTop: 2 }} numberOfLines={1}>
+              {selected.title}
+            </Text>
+            <Text style={{ color: primaryColor, fontSize: 15, fontWeight: "800", marginTop: 2 }}>
+              {money(selected)}
+              {selected.budgetMax ? `–${selected.budgetMax}` : ""}
+            </Text>
+          </View>
+          <View style={{ backgroundColor: primaryColor, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 }}>
+            <Text style={{ color: "#fff", fontWeight: "700" }}>View</Text>
+          </View>
+        </TouchableOpacity>
+      ) : null}
+    </View>
   );
 }

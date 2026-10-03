@@ -272,6 +272,10 @@ model Message {
 
   body        String
   imageUrl    String?
+  // Optional shared location pin (e.g. hirer sends the job site to the worker)
+  latitude      Float?
+  longitude     Float?
+  locationLabel String?
   systemEvent String? // e.g. "BID_ACCEPTED", "CHECKLIST_ITEM_DONE" — renders differently in-app
 
   createdAt DateTime  @default(now())

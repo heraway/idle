@@ -28,9 +28,12 @@ export default function LoginScreen({ navigation }: any) {
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: theme.background }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing.xxl, flexGrow: 1, justifyContent: "center" }}>
-        <Text style={[typography.h1, { color: theme.primary, marginBottom: spacing.xs }]}>idle</Text>
+        <Text style={{ color: theme.primary, fontSize: 56, fontWeight: "900", letterSpacing: -2, marginBottom: spacing.xs }}>idle</Text>
+        <Text style={[typography.h3, { color: theme.textPrimary, marginBottom: 4 }]}>
+          Put your spare hours to work.
+        </Text>
         <Text style={[typography.body, { color: theme.textSecondary, marginBottom: spacing.xl }]}>
-          Everyday work, done by real people nearby.
+          Everyday jobs, done by real people nearby.
         </Text>
 
         <Input label="Email" value={email} onChangeText={setEmail} placeholder="you@example.com" keyboardType="email-address" />

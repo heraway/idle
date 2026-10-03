@@ -90,6 +90,9 @@ export interface Message {
   senderId: string;
   body?: string | null;
   imageUrl?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  locationLabel?: string | null;
   systemEvent?: string | null;
   createdAt: string;
   sender?: Partial<User>;

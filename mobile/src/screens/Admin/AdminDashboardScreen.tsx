@@ -84,20 +84,24 @@ function UsersTab() {
   }, []);
 
   const moderate = async (id: string, action: "suspend" | "ban" | "reinstate") => {
-    Alert.prompt?.(
-      "Reason",
-      `Why are you ${action === "reinstate" ? "reinstating" : action + "ing"} this user?`,
-      async (reason) => {
-        if (!reason) return;
-        await api(`/admin/users/${id}/${action}`, { method: "POST", body: { reason } });
-        load();
-      }
-    ) ??
-      // Alert.prompt is iOS-only; fall back to a fixed reason on Android.
-      (async () => {
-        await api(`/admin/users/${id}/${action}`, { method: "POST", body: { reason: `${action} via admin dashboard` } });
-        load();
-      })();
+    Alert.alert(
+      action === "reinstate" ? "Reinstate user" : action === "ban" ? "Ban user" : "Suspend user",
+      `Are you sure you want to ${action} this user?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Confirm",
+          style: action === "ban" ? "destructive" : "default",
+          onPress: async () => {
+            await api(`/admin/users/${id}/${action}`, {
+              method: "POST",
+              body: { reason: `${action} via admin dashboard` },
+            });
+            load();
+          },
+        },
+      ]
+    );
   };
 
   return (

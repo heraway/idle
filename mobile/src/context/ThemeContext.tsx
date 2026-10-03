@@ -16,7 +16,7 @@ const STORAGE_KEY = "idle:themePreference";
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const systemScheme = useColorScheme(); // 'light' | 'dark' | null
-  const [preference, setPreferenceState] = useState<ThemePreference>("system");
+  const [preference, setPreferenceState] = useState<ThemePreference>("dark");
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then((saved) => {
@@ -30,7 +30,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   };
 
   const resolvedMode = preference === "system" ? systemScheme || "light" : preference;
-  const theme = useMemo(() => (resolvedMode === "dark" ? darkTheme : lightTheme), [resolvedMode]);
+  const theme: Theme = useMemo(() => (resolvedMode === "dark" ? darkTheme : lightTheme), [resolvedMode]);
 
   return (
     <ThemeContext.Provider value={{ theme, preference, setPreference }}>{children}</ThemeContext.Provider>

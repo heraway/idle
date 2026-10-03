@@ -3,6 +3,7 @@ import { NavigationContainer, DefaultTheme, DarkTheme } from "@react-navigation/
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { ActivityIndicator, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
@@ -19,6 +20,7 @@ import PostJobScreen from "../screens/Jobs/PostJobScreen";
 import ReportUserScreen from "../screens/Jobs/ReportUserScreen";
 
 import ChatScreen from "../screens/Chat/ChatScreen";
+import MessagesScreen from "../screens/Chat/MessagesScreen";
 import ProfileScreen from "../screens/Profile/ProfileScreen";
 import SettingsScreen from "../screens/Profile/SettingsScreen";
 import ChangePasswordScreen from "../screens/Profile/ChangePasswordScreen";
@@ -43,6 +45,12 @@ function AuthNavigator() {
   );
 }
 
+// Placeholder for the centre "Post" tab — pressing it opens the PostJob screen
+// instead of switching to a tab of its own.
+function PostPlaceholder() {
+  return null;
+}
+
 function MainTabs() {
   const { theme } = useTheme();
   return (
@@ -51,11 +59,69 @@ function MainTabs() {
         headerShown: false,
         tabBarActiveTintColor: theme.primary,
         tabBarInactiveTintColor: theme.textSecondary,
-        tabBarStyle: { backgroundColor: theme.surface, borderTopColor: theme.border },
+        tabBarStyle: {
+          backgroundColor: theme.surface,
+          borderTopColor: theme.border,
+          height: 64,
+          paddingBottom: 8,
+          paddingTop: 6,
+        },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: "700" },
       }}
     >
-      <Tabs.Screen name="Jobs" component={JobFeedScreen} />
-      <Tabs.Screen name="Profile" component={ProfileScreen} />
+      <Tabs.Screen
+        name="Jobs"
+        component={JobFeedScreen}
+        options={{
+          title: "Feed",
+          tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "briefcase" : "briefcase-outline"} size={22} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="Post"
+        component={PostPlaceholder}
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            e.preventDefault();
+            navigation.navigate("PostJob");
+          },
+        })}
+        options={{
+          tabBarLabel: "Post",
+          tabBarActiveTintColor: theme.primary,
+          tabBarIcon: () => (
+            <View
+              style={{
+                width: 46,
+                height: 46,
+                borderRadius: 23,
+                backgroundColor: theme.primary,
+                alignItems: "center",
+                justifyContent: "center",
+                marginTop: -16,
+                borderWidth: 4,
+                borderColor: theme.surface,
+              }}
+            >
+              <Ionicons name="add" size={28} color="#fff" />
+            </View>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="Messages"
+        component={MessagesScreen}
+        options={{
+          tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "chatbubbles" : "chatbubbles-outline"} size={22} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="Profile"
+        component={ProfileScreen}
+        options={{
+          tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "person" : "person-outline"} size={22} color={color} />,
+        }}
+      />
     </Tabs.Navigator>
   );
 }
@@ -65,9 +131,11 @@ function AppNavigator() {
   return (
     <AppStack.Navigator
       screenOptions={{
-        headerStyle: { backgroundColor: theme.surface },
+        headerStyle: { backgroundColor: theme.background },
         headerTintColor: theme.textPrimary,
+        headerTitleStyle: { fontWeight: "700", fontSize: 17 },
         headerShadowVisible: false,
+        contentStyle: { backgroundColor: theme.background },
       }}
     >
       <AppStack.Screen name="MainTabs" component={MainTabs} options={{ headerShown: false }} />
