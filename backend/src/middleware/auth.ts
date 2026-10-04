@@ -25,6 +25,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     // existing token is immediately worthless, not just at login time.
     const user = await prisma.user.findUnique({ where: { id: payload.userId } });
     if (!user) return next(new ApiError(401, "User no longer exists"));
+    if (user.deletedAt) return next(new ApiError(401, "This account has been deleted"));
     if (user.accountStatus === "BANNED") return next(new ApiError(403, "This account has been banned"));
     if (user.accountStatus === "SUSPENDED") return next(new ApiError(403, "This account is suspended"));
 
@@ -60,7 +61,7 @@ export async function optionalAuth(req: Request, _res: Response, next: NextFunct
     const token = header.split(" ")[1];
     const payload = verifyToken(token);
     const user = await prisma.user.findUnique({ where: { id: payload.userId } });
-    if (user && user.accountStatus === "ACTIVE") req.auth = payload;
+    if (user && user.accountStatus === "ACTIVE" && !user.deletedAt) req.auth = payload;
   } catch {
     // Invalid/expired token on a public route — just proceed unauthenticated.
   }

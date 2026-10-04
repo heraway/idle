@@ -20,6 +20,8 @@ import { escrowRouter } from "./routes/escrow.routes";
 import { reportRouter } from "./routes/report.routes";
 import { verificationRouter } from "./routes/verification.routes";
 import { adminRouter } from "./routes/admin.routes";
+import { accountRouter } from "./routes/account.routes";
+import { supportRouter } from "./routes/support.routes";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -82,6 +84,8 @@ app.use("/escrow", escrowRouter);
 app.use("/reports", reportRouter);
 app.use("/verification", verificationRouter);
 app.use("/admin", adminRouter);
+app.use("/users", accountRouter);
+app.use("/support", supportRouter);
 
 app.use(errorHandler);
 

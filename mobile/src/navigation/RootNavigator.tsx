@@ -30,6 +30,17 @@ import ChangePasswordScreen from "../screens/Profile/ChangePasswordScreen";
 import LegalDocScreen from "../screens/Profile/LegalDocScreen";
 import VerificationScreen from "../screens/Verification/VerificationScreen";
 import AdminDashboardScreen from "../screens/Admin/AdminDashboardScreen";
+import { useLanguage } from "../context/LanguageContext";
+import LanguageScreen from "../screens/Settings/LanguageScreen";
+import NotificationSettingsScreen from "../screens/Settings/NotificationSettingsScreen";
+import AccessibilityScreen from "../screens/Settings/AccessibilityScreen";
+import DeleteAccountScreen from "../screens/Settings/DeleteAccountScreen";
+import AboutScreen from "../screens/Settings/AboutScreen";
+import AcknowledgementsScreen from "../screens/Settings/AcknowledgementsScreen";
+import AppInfoScreen from "../screens/Settings/AppInfoScreen";
+import HelpScreen from "../screens/Settings/HelpScreen";
+import SupportFormScreen from "../screens/Settings/SupportFormScreen";
+import ReportUserPickerScreen from "../screens/Settings/ReportUserPickerScreen";
 
 const AuthStack = createNativeStackNavigator();
 const AppStack = createNativeStackNavigator();
@@ -130,6 +141,7 @@ function MainTabs() {
 }
 
 function AppNavigator() {
+  const { t } = useLanguage();
   const { theme } = useTheme();
   return (
     <AppStack.Navigator
@@ -153,6 +165,16 @@ function AppNavigator() {
       <AppStack.Screen name="LeaveReview" component={LeaveReviewScreen} options={{ title: "Review" }} />
       <AppStack.Screen name="ChangePassword" component={ChangePasswordScreen} options={{ title: "Change Password" }} />
       <AppStack.Screen name="LegalDoc" component={LegalDocScreen} options={{ title: "" }} />
+      <AppStack.Screen name="Language" component={LanguageScreen} options={{ title: t("settings.language") }} />
+      <AppStack.Screen name="NotificationSettings" component={NotificationSettingsScreen} options={{ title: t("settings.notifications") }} />
+      <AppStack.Screen name="Accessibility" component={AccessibilityScreen} options={{ title: t("settings.accessibility") }} />
+      <AppStack.Screen name="Help" component={HelpScreen} options={{ title: t("settings.help") }} />
+      <AppStack.Screen name="SupportForm" component={SupportFormScreen} options={{ title: "" }} />
+      <AppStack.Screen name="ReportUserPicker" component={ReportUserPickerScreen} options={{ title: t("settings.reportUser") }} />
+      <AppStack.Screen name="About" component={AboutScreen} options={{ title: t("settings.aboutIdle") }} />
+      <AppStack.Screen name="Acknowledgements" component={AcknowledgementsScreen} options={{ title: t("settings.acknowledgements") }} />
+      <AppStack.Screen name="AppInfo" component={AppInfoScreen} options={{ title: t("settings.appInfo") }} />
+      <AppStack.Screen name="DeleteAccount" component={DeleteAccountScreen} options={{ title: t("settings.deleteAccount") }} />
       <AppStack.Screen name="AdminDashboard" component={AdminDashboardScreen} options={{ title: "Admin" }} />
     </AppStack.Navigator>
   );

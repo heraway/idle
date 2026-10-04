@@ -22,7 +22,11 @@ export function useRegisterPushToken() {
   const registeredFor = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!user || registeredFor.current === user.id) return;
+    if (!user) {
+      registeredFor.current = null;
+      return;
+    }
+    if (registeredFor.current === user.id) return;
 
     (async () => {
       if (!Device.isDevice) {

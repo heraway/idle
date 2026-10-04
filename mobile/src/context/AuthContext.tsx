@@ -61,6 +61,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
+    // Best effort: stop pushes going to this phone after sign-out (never blocks logout).
+    try {
+      await Promise.race([
+        api("/users/me", { method: "PATCH", body: { pushToken: null } }),
+        new Promise((resolve) => setTimeout(resolve, 3000)),
+      ]);
+    } catch {
+      // offline / token already invalid - carry on
+    }
     await clearToken();
     setUser(null);
   };

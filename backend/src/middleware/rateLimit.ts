@@ -26,3 +26,11 @@ export const reportLimiter = rateLimit({
   keyGenerator: (req) => req.auth?.userId || req.ip || "unknown",
   message: { error: "You've filed a lot of reports recently. Please try again later." },
 });
+
+// Support tickets (problem / bug / feedback): per account, so one user can't flood the inbox.
+export const supportLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => req.auth?.userId || req.ip || "unknown",
+  message: { error: "You've sent a lot of messages recently. Please try again later." },
+});

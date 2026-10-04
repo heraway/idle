@@ -4,6 +4,8 @@ import { StatusBar } from "expo-status-bar";
 import { ThemeProvider, useTheme } from "./src/context/ThemeContext";
 import { AuthProvider } from "./src/context/AuthContext";
 import RootNavigator from "./src/navigation/RootNavigator";
+import { LanguageProvider } from "./src/context/LanguageContext";
+import { AccessibilityProvider } from "./src/context/AccessibilityContext";
 import { useRegisterPushToken } from "./src/hooks/usePushNotifications";
 
 function StatusBarBridge() {
@@ -36,12 +38,16 @@ function BuildSignature() {
 export default function App() {
   return (
     <ThemeProvider>
+      <AccessibilityProvider>
       <AuthProvider>
+        <LanguageProvider>
         <StatusBarBridge />
         <BuildSignature />
         <PushNotificationsBridge />
         <RootNavigator />
+      </LanguageProvider>
       </AuthProvider>
+      </AccessibilityProvider>
     </ThemeProvider>
   );
 }

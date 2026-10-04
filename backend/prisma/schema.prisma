@@ -138,6 +138,12 @@ model User {
   passwordResetTokenHash String?
   passwordResetExpiresAt DateTime?
 
+  // Settings: UI language, push preferences ({ push, bids, jobs, questions } - missing key = on),
+  // and the soft-delete marker set when someone deletes their account (see account.routes.ts).
+  language          String?
+  notificationPrefs Json?
+  deletedAt         DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -154,6 +160,7 @@ model User {
   blockedUsers      Block[]       @relation("Blocker")
   blockedByUsers    Block[]       @relation("Blocked")
   questionsAsked    JobQuestion[] @relation("QuestionsAsked")
+  supportTickets    SupportTicket[]
 
   @@index([accountStatus])
 }
@@ -397,4 +404,28 @@ model AdminAction {
   createdAt DateTime @default(now())
 
   @@index([targetUserId])
+}
+
+// In-app "Report a problem" / "Report a bug" / "Send feedback" submissions (Settings > Help & support).
+// Reporting a person uses Report instead.
+model SupportTicket {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  type     String // PROBLEM | BUG | FEEDBACK
+  category String?
+  message  String
+
+  // device context, filled in automatically by the app
+  appVersion     String?
+  platform       String?
+  osVersion      String?
+  runtimeVersion String?
+
+  status    String   @default("OPEN")
+  createdAt DateTime @default(now())
+
+  @@index([type, status])
+  @@index([userId])
 }
