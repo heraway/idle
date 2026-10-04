@@ -281,14 +281,25 @@ model Message {
 
   body        String
   imageUrl    String?
-  // Optional shared location pin (e.g. hirer sends the job site to the worker)
+  // Optional shared location pin.
+  //  - locationKind "JOB_SITE": the poster shared the job location. NO coordinates are
+  //    stored on the message — they're resolved from the Job at read time, and only
+  //    while the viewer is still allowed to see the precise location (see utils/jobLocation.ts).
+  //  - locationKind "PERSONAL": a participant explicitly chose to share their own current
+  //    location (one-off snapshot, never live). Coordinates are stored here and are
+  //    stripped from every response once the job is COMPLETED/CANCELLED.
   latitude      Float?
   longitude     Float?
   locationLabel String?
+  locationKind  String?
   systemEvent String? // e.g. "BID_ACCEPTED", "CHECKLIST_ITEM_DONE" — renders differently in-app
 
   createdAt DateTime  @default(now())
   readAt    DateTime?
+
+  // Soft delete: the row stays (so the conversation, ordering and system events
+  // are untouched) but body/photo/location content is wiped when this is set.
+  deletedAt DateTime?
 
   @@index([jobId, createdAt])
 }

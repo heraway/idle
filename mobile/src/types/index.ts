@@ -37,6 +37,8 @@ export interface Job {
   latitude: number;
   longitude: number;
   address?: string | null;
+  // false when the server is only returning an approximate location for this viewer
+  locationPrecise?: boolean;
   city?: string | null;
   payType: "fixed" | "hourly";
   budgetMin?: number | null;
@@ -119,6 +121,11 @@ export interface Message {
   latitude?: number | null;
   longitude?: number | null;
   locationLabel?: string | null;
+  // "JOB_SITE" (poster shared the job location) | "PERSONAL" (someone shared their own location)
+  locationKind?: "JOB_SITE" | "PERSONAL" | null;
+  // true when a pin existed but the server no longer serves its coordinates to this viewer
+  locationExpired?: boolean;
+  deletedAt?: string | null;
   systemEvent?: string | null;
   createdAt: string;
   sender?: Partial<User>;

@@ -6,6 +6,7 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/ApiError";
 import { refundEscrow } from "../services/escrow.service";
 import { notifyJobCancelled } from "../services/notification.service";
+import { purgeMessageLocations } from "../services/chat.service";
 import { sanitizeUser } from "./auth.routes";
 
 export const adminRouter = Router();
@@ -146,6 +147,7 @@ adminRouter.post(
       await tx.bid.updateMany({ where: { jobId: job.id, status: "PENDING" }, data: { status: "REJECTED" } });
       return cancelled;
     });
+    await purgeMessageLocations(job.id);
 
     if (job.escrow && (job.escrow.status === "FUNDED" || job.escrow.status === "DISPUTED_HOLD")) {
       await refundEscrow(job.id);

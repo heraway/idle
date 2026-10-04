@@ -7,17 +7,38 @@ import { ApiError } from "../utils/ApiError";
 import { upload, publicUrlFor } from "../services/upload.service";
 import { io } from "../index";
 import { assertClean } from "../utils/profanityFilter";
+import { isAdminRole, isJobEnded } from "../utils/jobLocation";
+import {
+  MESSAGE_SENDER_SELECT,
+  loadJobCtx,
+  removeUploadedFile,
+  serializeMessage,
+} from "../services/chat.service";
 
 export const messageRouter = Router();
 
+const viewerOf = (req: { auth?: { userId: string; role: string } }) => ({ userId: req.auth!.userId, role: req.auth!.role });
+
+// Hirer or an assigned worker of this job. Returns the job context used for
+// location-privacy decisions.
 async function assertParticipant(jobId: string, userId: string) {
-  const job = await prisma.job.findUnique({ where: { id: jobId } });
+  const job = await loadJobCtx(jobId);
   if (!job) throw new ApiError(404, "Job not found");
-  const isAssignedWorker = await prisma.jobAssignment.findFirst({ where: { jobId, workerId: userId } });
+  const isAssignedWorker = job.assignments.some((a) => a.workerId === userId);
   if (job.hirerId !== userId && !isAssignedWorker) {
     throw new ApiError(403, "You are not part of this job's conversation");
   }
   return job;
+}
+
+// Sends a message event to every socket currently in the job room, serialised
+// separately for each one so nobody receives more than they're allowed to see.
+async function broadcastMessage(job: NonNullable<Awaited<ReturnType<typeof loadJobCtx>>>, message: any) {
+  const sockets = await io.in(`job_${job.id}`).fetchSockets();
+  for (const s of sockets) {
+    const viewer = { userId: s.data.userId as string, role: (s.data.role as string) || "USER" };
+    s.emit("newMessage", serializeMessage(message, job, viewer));
+  }
 }
 
 // ------------------------------------------------------------
@@ -35,9 +56,10 @@ messageRouter.get(
         status: { not: "CANCELLED" },
       },
       include: {
-        hirer: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
-        assignments: { include: { worker: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } } } },
-        messages: { orderBy: { createdAt: "desc" }, take: 1 },
+        hirer: { select: MESSAGE_SENDER_SELECT },
+        assignments: { include: { worker: { select: MESSAGE_SENDER_SELECT } } },
+        // A deleted message never becomes the preview; deleting it just reveals the previous one.
+        messages: { where: { deletedAt: null }, orderBy: { createdAt: "desc" }, take: 1 },
       },
     });
 
@@ -56,7 +78,8 @@ messageRouter.get(
             ? {
                 body: last.body,
                 hasImage: !!last.imageUrl,
-                hasLocation: last.latitude != null,
+                // A pin counts as "a location" in the preview, but never exposes coordinates here.
+                hasLocation: last.latitude != null || last.locationKind != null,
                 systemEvent: last.systemEvent,
                 senderId: last.senderId,
                 createdAt: last.createdAt,
@@ -76,13 +99,14 @@ messageRouter.get(
   "/job/:jobId",
   requireAuth,
   asyncHandler(async (req, res) => {
-    await assertParticipant(req.params.jobId, req.auth!.userId);
+    const job = await assertParticipant(req.params.jobId, req.auth!.userId);
     const messages = await prisma.message.findMany({
       where: { jobId: req.params.jobId },
       orderBy: { createdAt: "asc" },
-      include: { sender: { select: { id: true, firstName: true, avatarUrl: true } } },
+      include: { sender: { select: MESSAGE_SENDER_SELECT } },
     });
-    res.json(messages);
+    const viewer = viewerOf(req);
+    res.json(messages.map((m) => serializeMessage(m, job, viewer)));
   })
 );
 
@@ -93,16 +117,14 @@ messageRouter.post(
   asyncHandler(async (req, res) => {
     const data = sendSchema.parse(req.body);
     assertClean(data.body, "message");
-    await assertParticipant(data.jobId, req.auth!.userId);
+    const job = await assertParticipant(data.jobId, req.auth!.userId);
     const message = await prisma.message.create({
       data: { jobId: data.jobId, senderId: req.auth!.userId, body: data.body },
-      include: { sender: { select: { id: true, firstName: true, avatarUrl: true } } },
+      include: { sender: { select: MESSAGE_SENDER_SELECT } },
     });
 
-    // Broadcast message via Socket.IO to room members
-    io.to(`job_${data.jobId}`).emit("newMessage", message);
-
-    res.status(201).json(message);
+    await broadcastMessage(job, message);
+    res.status(201).json(serializeMessage(message, job, viewerOf(req)));
   })
 );
 
@@ -114,7 +136,7 @@ messageRouter.post(
     const jobId = req.body.jobId as string;
     if (!jobId) throw new ApiError(400, "jobId is required");
     if (req.body.body) assertClean(req.body.body, "message");
-    await assertParticipant(jobId, req.auth!.userId);
+    const job = await assertParticipant(jobId, req.auth!.userId);
     if (!req.file) throw new ApiError(400, "No photo uploaded");
     const message = await prisma.message.create({
       data: {
@@ -124,35 +146,63 @@ messageRouter.post(
         body: req.body.body || "",
         imageUrl: publicUrlFor(req.file.filename, req),
       },
-      include: { sender: { select: { id: true, firstName: true, avatarUrl: true } } },
+      include: { sender: { select: MESSAGE_SENDER_SELECT } },
     });
 
-    // Broadcast message with image attachment via Socket.IO to room members
-    io.to(`job_${jobId}`).emit("newMessage", message);
-
-    res.status(201).json(message);
+    await broadcastMessage(job, message);
+    res.status(201).json(serializeMessage(message, job, viewerOf(req)));
   })
 );
 
 // ------------------------------------------------------------
-// SHARE A LOCATION PIN — typically the hirer sending the exact job site to
-// the assigned worker. Only job participants can post, and only participants
-// can read the chat, so exact coordinates never reach other bidders.
+// SHARE THE JOB LOCATION — poster only, and only once someone is hired.
+// The client sends NO coordinates: the server reads them from the job, and the
+// message stores a reference only. Whether a given reader sees the pin is
+// decided on every read by the job-location lifecycle (jobLocation.ts), so the
+// pin stops resolving for the worker as soon as the job is completed/cancelled.
 // ------------------------------------------------------------
-const locationSchema = z.object({
+const shareJobLocationSchema = z.object({ jobId: z.string().uuid() });
+
+messageRouter.post(
+  "/share-job-location",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { jobId } = shareJobLocationSchema.parse(req.body);
+    const job = await assertParticipant(jobId, req.auth!.userId);
+    if (job.hirerId !== req.auth!.userId) throw new ApiError(403, "Only the person who posted the job can share its location");
+    if (job.assignments.length === 0) throw new ApiError(400, "You can share the exact location once you've hired someone");
+    if (isJobEnded(job.status)) throw new ApiError(400, "This job is finished, so its location can no longer be shared");
+
+    const message = await prisma.message.create({
+      data: { jobId, senderId: req.auth!.userId, body: "", locationKind: "JOB_SITE" },
+      include: { sender: { select: MESSAGE_SENDER_SELECT } },
+    });
+    await broadcastMessage(job, message);
+    res.status(201).json(serializeMessage(message, job, viewerOf(req)));
+  })
+);
+
+// ------------------------------------------------------------
+// SHARE MY OWN LOCATION — strictly opt-in. A single snapshot, sent only when
+// the user taps "share" and the request carries explicit consent. Nothing in
+// the app ever sends this automatically, and the server never stores a user's
+// location anywhere except on this message the user chose to send.
+// ------------------------------------------------------------
+const shareMyLocationSchema = z.object({
   jobId: z.string().uuid(),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
-  label: z.string().max(200).optional(),
+  consent: z.literal(true, { errorMap: () => ({ message: "Sharing your location needs your explicit confirmation" }) }),
 });
 
 messageRouter.post(
-  "/location",
+  "/share-my-location",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const data = locationSchema.parse(req.body);
-    if (data.label) assertClean(data.label, "location label");
-    await assertParticipant(data.jobId, req.auth!.userId);
+    const data = shareMyLocationSchema.parse(req.body);
+    const job = await assertParticipant(data.jobId, req.auth!.userId);
+    if (isJobEnded(job.status)) throw new ApiError(400, "This job is finished, so locations can no longer be shared in its chat");
+
     const message = await prisma.message.create({
       data: {
         jobId: data.jobId,
@@ -160,11 +210,52 @@ messageRouter.post(
         body: "",
         latitude: data.latitude,
         longitude: data.longitude,
-        locationLabel: data.label || null,
+        locationLabel: "My current location",
+        locationKind: "PERSONAL",
       },
-      include: { sender: { select: { id: true, firstName: true, avatarUrl: true } } },
+      include: { sender: { select: MESSAGE_SENDER_SELECT } },
     });
-    io.to(`job_${data.jobId}`).emit("newMessage", message);
-    res.status(201).json(message);
+    await broadcastMessage(job, message);
+    res.status(201).json(serializeMessage(message, job, viewerOf(req)));
+  })
+);
+
+// Retired: the old endpoint accepted arbitrary client-supplied coordinates
+// (including the job's exact location). Replaced by the two endpoints above.
+messageRouter.post("/location", requireAuth, (_req, _res, next) => {
+  next(new ApiError(410, "Please update the app to share locations in chat"));
+});
+
+// ------------------------------------------------------------
+// DELETE A MESSAGE — only the person who sent it (or an admin, for moderation).
+// It's a soft delete scoped to this one message: the content (text, photo,
+// location) is wiped, but the row, the conversation and the other person
+// stay exactly as they were. System events (bid accepted, checklist ticks)
+// are part of the job's record and can't be deleted.
+// ------------------------------------------------------------
+messageRouter.delete(
+  "/:id",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const userId = req.auth!.userId;
+    const message = await prisma.message.findUnique({ where: { id: req.params.id } });
+    if (!message) throw new ApiError(404, "Message not found");
+
+    const isAdmin = isAdminRole(req.auth!.role);
+    if (message.senderId !== userId && !isAdmin) {
+      throw new ApiError(403, "You can only delete your own messages");
+    }
+    if (!isAdmin) await assertParticipant(message.jobId, userId);
+    if (message.systemEvent) throw new ApiError(400, "Activity updates can't be deleted");
+
+    if (!message.deletedAt) {
+      await prisma.message.update({
+        where: { id: message.id },
+        data: { deletedAt: new Date(), body: "", imageUrl: null, latitude: null, longitude: null, locationLabel: null, locationKind: null },
+      });
+      removeUploadedFile(message.imageUrl);
+      io.to(`job_${message.jobId}`).emit("messageDeleted", { id: message.id, jobId: message.jobId });
+    }
+    res.json({ ok: true, id: message.id });
   })
 );

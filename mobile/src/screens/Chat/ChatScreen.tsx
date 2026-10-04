@@ -19,7 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { io, Socket } from "socket.io-client";
 import { useTheme } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
-import { api, apiUpload, API_URL } from "../../api/client";
+import { api, apiUpload, API_URL, getToken } from "../../api/client";
 import { appendImage, imageMediaTypes } from "../../utils/media";
 import { Job, Message } from "../../types";
 import { Avatar } from "../../components/UI";
@@ -48,6 +48,35 @@ export default function ChatScreen({ route, navigation }: any) {
     setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
   }, []);
 
+  // A deleted message stays in the list as a quiet placeholder; nothing else changes.
+  const markDeleted = useCallback((id: string) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === id
+          ? { ...m, body: "", imageUrl: null, latitude: null, longitude: null, locationLabel: null, locationKind: null, locationExpired: false, deletedAt: new Date().toISOString() }
+          : m
+      )
+    );
+  }, []);
+
+  const confirmDelete = (item: Message) => {
+    Alert.alert("Delete message?", "This removes the message for everyone in this chat. The conversation stays.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await api(`/messages/${item.id}`, { method: "DELETE" });
+            markDeleted(item.id);
+          } catch (e: any) {
+            Alert.alert("Couldn't delete message", e.message);
+          }
+        },
+      },
+    ]);
+  };
+
   const load = useCallback(async () => {
     try {
       setMessages(await api<Message[]>(`/messages/job/${jobId}`));
@@ -62,16 +91,26 @@ export default function ChatScreen({ route, navigation }: any) {
       .then(setJob)
       .catch(() => {});
 
-    const socket = io(API_URL, { transports: ["websocket"] });
-    socketRef.current = socket;
-    socket.on("connect", () => socket.emit("joinJobChat", jobId));
-    socket.on("newMessage", (msg: Message) => addMessage(msg));
+    // The chat socket is authenticated; the server only lets participants of
+    // this job join its room.
+    let socket: Socket | null = null;
+    let cancelled = false;
+    (async () => {
+      const token = await getToken();
+      if (cancelled || !token) return;
+      socket = io(API_URL, { transports: ["websocket"], auth: { token } });
+      socketRef.current = socket;
+      socket.on("connect", () => socket?.emit("joinJobChat", jobId));
+      socket.on("newMessage", (msg: Message) => addMessage(msg));
+      socket.on("messageDeleted", ({ id }: { id: string }) => markDeleted(id));
+    })();
 
     return () => {
-      socket.emit("leaveJobChat", jobId);
-      socket.disconnect();
+      cancelled = true;
+      socket?.emit("leaveJobChat", jobId);
+      socket?.disconnect();
     };
-  }, [jobId, load, addMessage]);
+  }, [jobId, load, addMessage, markDeleted]);
 
   // ---------------------------------------------------------- send text
   const send = async () => {
@@ -129,12 +168,40 @@ export default function ChatScreen({ route, navigation }: any) {
   };
 
   // ------------------------------------------------------- send location
-  const postLocation = async (latitude: number, longitude: number, label?: string) => {
+  // Both actions are explicit, one-off taps. Nothing in this screen ever reads
+  // or sends a location on its own.
+  const sendJobLocation = async () => {
+    setSheetOpen(false);
     setBusy(true);
     try {
-      const msg = await api<Message>("/messages/location", {
+      // No coordinates are sent: the server pins the job's own location, and only
+      // shows it to people who are currently allowed to see it.
+      const msg = await api<Message>("/messages/share-job-location", { method: "POST", body: { jobId } });
+      addMessage(msg);
+    } catch (e: any) {
+      Alert.alert("Location not sent", e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const shareMyLocation = async () => {
+    const perm = await Location.requestForegroundPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("Location permission needed", "Allow location access to share where you are.");
+      return;
+    }
+    setBusy(true);
+    const pos = await Location.getCurrentPositionAsync({}).catch(() => null);
+    if (!pos) {
+      setBusy(false);
+      Alert.alert("Couldn't get your location", "Check that location is turned on and try again.");
+      return;
+    }
+    try {
+      const msg = await api<Message>("/messages/share-my-location", {
         method: "POST",
-        body: { jobId, latitude, longitude, label },
+        body: { jobId, latitude: pos.coords.latitude, longitude: pos.coords.longitude, consent: true },
       });
       addMessage(msg);
     } catch (e: any) {
@@ -144,27 +211,17 @@ export default function ChatScreen({ route, navigation }: any) {
     }
   };
 
-  const sendJobLocation = async () => {
+  const sendMyLocation = () => {
     setSheetOpen(false);
-    if (!job) return;
-    await postLocation(job.latitude, job.longitude, job.address || `Job site · ${job.title}`);
-  };
-
-  const sendMyLocation = async () => {
-    setSheetOpen(false);
-    const perm = await Location.requestForegroundPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert("Location permission needed", "Allow location access to share where you are.");
-      return;
-    }
-    setBusy(true);
-    const pos = await Location.getCurrentPositionAsync({}).catch(() => null);
-    setBusy(false);
-    if (!pos) {
-      Alert.alert("Couldn't get your location", "Check that location is turned on and try again.");
-      return;
-    }
-    await postLocation(pos.coords.latitude, pos.coords.longitude, "My current location");
+    const other = isHirer ? "the worker" : "the employer";
+    Alert.alert(
+      "Share your current location?",
+      `This sends a one-time pin of where you are right now to ${other} in this chat. It isn't live and it stops being available when the job ends.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Share", onPress: shareMyLocation },
+      ]
+    );
   };
 
   // -------------------------------------------------------------- render
@@ -196,6 +253,19 @@ export default function ChatScreen({ route, navigation }: any) {
     const hasLocation = typeof item.latitude === "number" && typeof item.longitude === "number";
     const fg = mine ? "#FFFFFF" : theme.textPrimary;
 
+    if (item.deletedAt) {
+      return (
+        <View style={{ alignItems: mine ? "flex-end" : "flex-start", marginBottom: spacing.sm }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: 18, borderWidth: 1, borderColor: theme.border }}>
+            <Ionicons name="ban-outline" size={14} color={theme.textSecondary} />
+            <Text style={{ color: theme.textSecondary, fontStyle: "italic", fontSize: 13 }}>
+              {mine ? "You deleted this message" : "This message was deleted"}
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
     return (
       <View style={{ flexDirection: "row", alignItems: "flex-end", justifyContent: mine ? "flex-end" : "flex-start", marginBottom: spacing.sm }}>
         {!mine ? (
@@ -208,9 +278,15 @@ export default function ChatScreen({ route, navigation }: any) {
             />
           </View>
         ) : null}
+        <TouchableOpacity
+          activeOpacity={0.95}
+          onLongPress={mine ? () => confirmDelete(item) : undefined}
+          delayLongPress={350}
+          accessibilityHint={mine ? "Long press to delete this message" : undefined}
+          style={{ maxWidth: "80%" }}
+        >
         <View
           style={{
-            maxWidth: "80%",
             backgroundColor: mine ? theme.primary : theme.bubbleOther,
             borderRadius: 18,
             borderBottomRightRadius: mine ? 4 : 18,
@@ -259,12 +335,27 @@ export default function ChatScreen({ route, navigation }: any) {
             </TouchableOpacity>
           ) : null}
 
+          {item.locationExpired ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, minWidth: 190 }}>
+              <Ionicons name="location-outline" size={20} color={mine ? "rgba(255,255,255,0.85)" : theme.textSecondary} />
+              <Text style={{ color: mine ? "rgba(255,255,255,0.85)" : theme.textSecondary, fontSize: 13, flex: 1 }}>
+                Location no longer available
+              </Text>
+            </View>
+          ) : null}
+
           {item.body ? (
             <Text style={{ color: fg, fontSize: 15, lineHeight: 21, padding: item.imageUrl ? 8 : 0, paddingBottom: item.imageUrl ? 4 : 0 }}>
               {item.body}
             </Text>
           ) : null}
         </View>
+        </TouchableOpacity>
+        {mine ? (
+          <View style={{ marginLeft: spacing.xs }}>
+            <Avatar name={user?.firstName} uri={user?.avatarUrl} size={28} />
+          </View>
+        ) : null}
         <Text style={{ color: theme.textSecondary, fontSize: 11, marginTop: 3, marginHorizontal: 4 }}>{hhmm(item.createdAt)}</Text>
       </View>
     );
@@ -431,15 +522,20 @@ export default function ChatScreen({ route, navigation }: any) {
             <View style={{ alignSelf: "center", width: 40, height: 4, borderRadius: 2, backgroundColor: theme.border, marginBottom: spacing.md }} />
             <SheetAction icon="camera" label="Take a photo" sub="Use your camera" onPress={takePhoto} />
             <SheetAction icon="images" label="Choose from gallery" sub="Pick an existing photo" onPress={pickFromGallery} />
-            {isHirer && job ? (
+            {isHirer && job && (job.assignments?.length ?? 0) > 0 && !["COMPLETED", "CANCELLED"].includes(job.status) ? (
               <SheetAction
                 icon="navigate"
                 label="Send job location"
-                sub="Exact pin of the work site, visible only in this chat"
+                sub="Exact job address, only visible to the hired worker while the job is active"
                 onPress={sendJobLocation}
               />
             ) : null}
-            <SheetAction icon="location" label="Share my current location" sub="Drop a pin where you are right now" onPress={sendMyLocation} />
+            <SheetAction
+              icon="location"
+              label="Share my current location"
+              sub="Optional. You'll be asked to confirm, and it's sent once, never live"
+              onPress={sendMyLocation}
+            />
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>

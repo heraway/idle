@@ -106,7 +106,18 @@ export default function MessagesScreen({ navigation }: any) {
                 gap: spacing.md,
               }}
             >
-              <Avatar name={other ? `${other.firstName} ${other.lastName ?? ""}` : "?"} uri={abs(other?.avatarUrl)} size={46} />
+              {item.counterparts.length > 1 ? (
+                // Several workers on one job: overlap the first two avatars
+                <View style={{ width: 58, height: 46 }}>
+                  {item.counterparts.slice(0, 2).map((p, i) => (
+                    <View key={p.id} style={{ position: "absolute", left: i * 20, top: i * 6, borderWidth: 2, borderColor: theme.surface, borderRadius: 24 }}>
+                      <Avatar name={`${p.firstName} ${p.lastName ?? ""}`} uri={abs(p.avatarUrl)} size={34} />
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Avatar name={other ? `${other.firstName} ${other.lastName ?? ""}` : "?"} uri={abs(other?.avatarUrl)} size={46} />
+              )}
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                   <Text style={{ color: theme.textPrimary, fontWeight: "700", fontSize: 15, flex: 1 }} numberOfLines={1}>

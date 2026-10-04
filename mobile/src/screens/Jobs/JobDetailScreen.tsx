@@ -286,15 +286,17 @@ export default function JobDetailScreen({ route, navigation }: any) {
             onPress={() => navigation.navigate("Chat", { jobId: job.id, jobTitle: job.title })}
             style={{ flex: 1 }}
           />
-          <Button
-            title="Directions"
-            icon="navigate"
-            variant="secondary"
-            onPress={() =>
-              Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${job.latitude},${job.longitude}`)
-            }
-            style={{ flex: 1 }}
-          />
+          {job.locationPrecise ? (
+            <Button
+              title="Directions"
+              icon="navigate"
+              variant="secondary"
+              onPress={() =>
+                Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${job.latitude},${job.longitude}`)
+              }
+              style={{ flex: 1 }}
+            />
+          ) : null}
         </View>
       )}
 

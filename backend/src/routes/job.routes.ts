@@ -8,7 +8,9 @@ import { upload, publicUrlFor } from "../services/upload.service";
 import { assertClean } from "../utils/profanityFilter";
 import { refundEscrow } from "../services/escrow.service";
 import { notifyJobCancelled } from "../services/notification.service";
+import { purgeMessageLocations } from "../services/chat.service";
 import { BidStatus } from "@prisma/client";
+import { maskJobLocation, approxCoord, isAdminRole } from "../utils/jobLocation";
 
 export const jobRouter = Router();
 
@@ -122,29 +124,6 @@ function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// ------------------------------------------------------------
-// LOCATION PRIVACY — a job's exact coordinates and street address are only
-// shown to the hirer, the assigned worker, and admins. Everyone else
-// (people browsing the feed, or who bid but weren't chosen) sees the
-// location rounded to ~1.1km precision and no street address — enough to
-// judge distance/neighborhood without pinpointing a home.
-// ------------------------------------------------------------
-function maskJobLocation<T extends { hirerId: string; assignments?: { workerId: string }[]; latitude: number; longitude: number; address?: string | null }>(
-  job: T,
-  viewer?: { userId: string; role: string }
-): T {
-  const isParticipant = !!viewer && (viewer.userId === job.hirerId || job.assignments?.some((assignment) => assignment.workerId === viewer.userId));
-  const isAdmin = !!viewer && (viewer.role === "ADMIN" || viewer.role === "SUPERADMIN");
-  if (isParticipant || isAdmin) return job;
-
-  return {
-    ...job,
-    latitude: approxCoord(job.latitude),
-    longitude: approxCoord(job.longitude),
-    address: null,
-  };
-}
-
 type JobSearchQuery = z.infer<typeof searchSchema>;
 
 // ------------------------------------------------------------
@@ -157,12 +136,6 @@ const APPLICANT_COUNT_SELECT = { bids: { where: { status: { not: BidStatus.WITHD
 function withApplicantCount<T extends { _count?: { bids: number } }>(job: T) {
   const { _count, ...rest } = job;
   return { ...rest, applicantCount: _count?.bids ?? 0 };
-}
-
-// ~1.1km grid. Deterministic, so the same job always lands on the same
-// approximate spot and the true coordinates can't be recovered from it.
-function approxCoord(n: number) {
-  return Math.round(n * 100) / 100;
 }
 
 // Shared by the list feed and the map so both honour exactly the same filters.
@@ -331,6 +304,7 @@ jobRouter.get(
     const expiresAt = (job as { expiresAt?: Date | null }).expiresAt;
     if (job.status === "OPEN" && expiresAt && new Date(expiresAt) <= new Date()) {
       const expired = await prisma.job.update({ where: { id: job.id }, data: { status: "CANCELLED" } });
+      await purgeMessageLocations(job.id);
       return res.json(maskJobLocation(expired, req.auth ? { userId: req.auth.userId, role: req.auth.role } : undefined));
     }
 
@@ -339,7 +313,7 @@ jobRouter.get(
 
     // Applicant identities are private to the poster (and admins). Everyone
     // else gets the headline count and, if they've bid, only their own bid.
-    const isAdmin = !!viewer && (viewer.role === "ADMIN" || viewer.role === "SUPERADMIN");
+    const isAdmin = !!viewer && isAdminRole(viewer.role);
     const canSeeAllBids = !!viewer && (viewer.userId === job.hirerId || isAdmin);
     const visibleBids = canSeeAllBids ? job.bids : job.bids.filter((b) => !!viewer && b.bidderId === viewer.userId);
 
@@ -462,6 +436,8 @@ jobRouter.post(
       await tx.bid.updateMany({ where: { jobId: job.id, status: "PENDING" }, data: { status: "REJECTED" } });
       return cancelled;
     });
+
+    await purgeMessageLocations(job.id);
 
     // Escrow is only ever funded once a job reaches ASSIGNED (see
     // escrow.routes.ts), but a hirer can still cancel from ASSIGNED before

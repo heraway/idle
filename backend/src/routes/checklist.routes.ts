@@ -6,6 +6,7 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/ApiError";
 import { upload, publicUrlFor } from "../services/upload.service";
 import { notifyJobSubmitted } from "../services/notification.service";
+import { purgeMessageLocations } from "../services/chat.service";
 
 export const checklistRouter = Router();
 
@@ -99,6 +100,8 @@ checklistRouter.post(
       where: { id: job.id },
       data: { status: "COMPLETED", completedAt: new Date() },
     });
+    // Precise location access ends with the job — wipe any pins stored in chat.
+    await purgeMessageLocations(job.id);
     res.json(updated);
   })
 );

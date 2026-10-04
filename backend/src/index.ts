@@ -7,6 +7,8 @@ import http from "http";
 import { Server } from "socket.io";
 import { generalLimiter } from "./middleware/rateLimit";
 import { errorHandler } from "./middleware/errorHandler";
+import { verifyToken } from "./utils/jwt";
+import { prisma } from "./config/prisma";
 
 import { authRouter } from "./routes/auth.routes";
 import { userRouter } from "./routes/user.routes";
@@ -34,21 +36,46 @@ export const io = new Server(server, {
   },
 });
 
-io.on("connection", (socket) => {
-  console.log(`Socket connected: ${socket.id}`);
+// Chat sockets must be authenticated, and may only join the room of a job the
+// user is actually part of (hirer or assigned worker). Without this, anyone who
+// knew a job id could listen in on its messages.
+io.use(async (socket, next) => {
+  try {
+    const token = (socket.handshake.auth?.token as string | undefined) || undefined;
+    if (!token) return next(new Error("Authentication required"));
+    const payload = verifyToken(token);
+    const user = await prisma.user.findUnique({ where: { id: payload.userId } });
+    if (!user || user.deletedAt || user.accountStatus !== "ACTIVE") return next(new Error("Account not available"));
+    socket.data.userId = user.id;
+    socket.data.role = user.role;
+    next();
+  } catch {
+    next(new Error("Invalid or expired token"));
+  }
+});
 
-  socket.on("joinJobChat", (jobId: string) => {
-    socket.join(`job_${jobId}`);
-    console.log(`Socket ${socket.id} joined room job_${jobId}`);
+io.on("connection", (socket) => {
+  socket.on("joinJobChat", async (jobId: string) => {
+    try {
+      if (typeof jobId !== "string") return;
+      const userId = socket.data.userId as string;
+      const job = await prisma.job.findUnique({
+        where: { id: jobId },
+        select: { hirerId: true, assignments: { select: { workerId: true } } },
+      });
+      const allowed = !!job && (job.hirerId === userId || job.assignments.some((a) => a.workerId === userId));
+      if (!allowed) {
+        socket.emit("chatError", { jobId, error: "You are not part of this job's conversation" });
+        return;
+      }
+      socket.join(`job_${jobId}`);
+    } catch {
+      socket.emit("chatError", { jobId, error: "Could not join chat" });
+    }
   });
 
   socket.on("leaveJobChat", (jobId: string) => {
     socket.leave(`job_${jobId}`);
-    console.log(`Socket ${socket.id} left room job_${jobId}`);
-  });
-
-  socket.on("disconnect", () => {
-    console.log(`Socket disconnected: ${socket.id}`);
   });
 });
 
