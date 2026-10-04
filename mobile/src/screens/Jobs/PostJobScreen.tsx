@@ -138,7 +138,7 @@ export default function PostJobScreen({ navigation }: any) {
     <ScrollView style={{ flex: 1, backgroundColor: theme.background }} contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}>
       <Input label="Title" value={title} onChangeText={setTitle} placeholder="e.g. Mow my backyard lawn" />
       <Input label="Description" value={description} onChangeText={setDescription} placeholder="What needs doing, and any details a worker should know" multiline />
-      <Input label="Address or landmark (only shown to the hired worker)" value={address} onChangeText={setAddress} placeholder="e.g. House 12, Kabulonga Rd" />
+      <Input label="Address or landmark (only shown to the hired worker)" value={address} onChangeText={setAddress} placeholder="Enter your address" />
 
       <SectionLabel>Photos of the work site (optional)</SectionLabel>
       <Text style={[typography.caption, { color: theme.textSecondary, marginBottom: spacing.sm }]}>

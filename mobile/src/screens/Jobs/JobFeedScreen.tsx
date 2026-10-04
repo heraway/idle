@@ -259,7 +259,7 @@ export default function JobFeedScreen({ navigation }: any) {
           >
             <Ionicons name="search" size={18} color={theme.textSecondary} />
             <TextInput
-              placeholder="Search gigs, e.g. lawn, braiding"
+              placeholder="Search gigs, e.g. cleaning, moving"
               placeholderTextColor={theme.textSecondary + "99"}
               value={searchText}
               onChangeText={setSearchText}

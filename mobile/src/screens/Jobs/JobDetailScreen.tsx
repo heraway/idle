@@ -598,7 +598,7 @@ export default function JobDetailScreen({ route, navigation }: any) {
           ) : (
             <>
               <TextInput
-                placeholder="Your price ($)"
+                placeholder={`Your price (${job.currency})`}
                 placeholderTextColor={theme.textSecondary}
                 keyboardType="numeric"
                 value={bidAmount}
